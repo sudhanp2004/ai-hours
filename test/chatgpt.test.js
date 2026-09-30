@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-require('../extension/src/adapter-chatgpt.js');
+require('../extension/src/chatgpt-network.js');
+require('../extension/src/chatgpt-page.js');
 const { chatgpt } = globalThis.__aiHours;
 
 const SECRET = 'SECRET-TEXT-MUST-NOT-LEAK';
@@ -12,6 +13,12 @@ test('stream and stop URL patterns match the verified endpoints only', () => {
   assert.ok(!chatgpt.streamUrl.test('/backend-api/f/conversation/prepare'));
   assert.ok(!chatgpt.streamUrl.test('/backend-api/conversation/init'));
   assert.ok(chatgpt.stopUrl.test('/backend-api/stop_conversation'));
+});
+
+test('network and page halves merge into one config', () => {
+  assert.equal(chatgpt.site, 'chatgpt');
+  assert.equal(chatgpt.stopButton, 'button[data-testid="stop-button"]');
+  assert.equal(typeof chatgpt.parseEvent, 'function');
 });
 
 test('[DONE] → done', () => {

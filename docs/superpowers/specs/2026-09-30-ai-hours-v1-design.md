@@ -47,12 +47,12 @@ Product principles (unchanged from handoff): one number · honest (unknown is sh
 ```
 chatgpt.com page
  ├─ MAIN world  (document_start)
- │    adapter-chatgpt.js   site config + structural stream parser (pure)
+ │    chatgpt-network.js   endpoints + structural stream parser (pure)
  │    sse.js               SSE framing (pure)
  │    main-world.js        wraps fetch → emits signals via window.postMessage
  │
  ├─ ISOLATED world (document_start)
- │    adapter-chatgpt.js   (same file, for DOM selectors)
+ │    chatgpt-page.js      site name + stop-button selector (a file can't be listed in both worlds: Chrome injects it only once)
  │    verify.js            fetch-vs-DOM cross-verification (pure)
  │    tracker.js           per-tab state machine: signals + DOM → records (pure)
  │    content.js           wiring: message listener, DOM observer, storage writes
@@ -68,7 +68,7 @@ Content scripts can write `chrome.storage.local` directly, and the popup can rea
 
 **`sse.js`**: `createSseParser(onEvent)` returns `push(textChunk)`. It splits on blank lines, normalises `\r\n`, and emits `{event, data}`. Pure; no site knowledge.
 
-**`adapter-chatgpt.js`**: a data object plus one pure function:
+**`chatgpt-network.js` + `chatgpt-page.js`**: together they build one data object plus one pure function, each world loading only its half:
 ```js
 {
   site: 'chatgpt',

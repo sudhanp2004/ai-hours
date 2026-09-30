@@ -19,7 +19,7 @@ const sse = (chunks) => () => new Response(new ReadableStream({
 }), { headers: { 'content-type': 'text/event-stream; charset=utf-8' } });
 
 function load() {
-  for (const f of ['sse', 'adapter-chatgpt', 'main-world']) {
+  for (const f of ['sse', 'chatgpt-network', 'main-world']) {
     const p = require.resolve(`../extension/src/${f}.js`);
     delete require.cache[p];
     require(p);

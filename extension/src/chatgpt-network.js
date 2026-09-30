@@ -1,5 +1,6 @@
-// ChatGPT site config. Endpoints and selectors verified in DevTools on 2026-09-30 (see spike/).
-// parseEvent returns structural signals only, never message text.
+// ChatGPT network config (MAIN world). Endpoints verified in DevTools on 2026-09-30 (see spike/).
+// parseEvent returns structural signals only, never message text. The page-side half of
+// ns.chatgpt lives in chatgpt-page.js: a file can't be listed in both worlds (see manifest test).
 (function (root) {
   const ns = (root.__aiHours = root.__aiHours || {});
 
@@ -43,11 +44,9 @@
     return null;
   }
 
-  ns.chatgpt = {
-    site: 'chatgpt',
+  ns.chatgpt = Object.assign(ns.chatgpt || {}, {
     streamUrl: /\/backend-(api|anon)\/f\/conversation$/,
     stopUrl: /\/backend-(api|anon)\/stop_conversation$/,
-    stopButton: 'button[data-testid="stop-button"]',
     parseEvent,
-  };
+  });
 })(globalThis);
