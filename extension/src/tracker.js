@@ -17,10 +17,9 @@
     if (sig.reasoningEnd != null) s.reasoningEnd = sig.reasoningEnd;
   }
 
-  ns.createTracker = function createTracker({ site, newId, write }) {
+  ns.createTracker = function createTracker({ site, tabId, newId, write }) {
     const open = new Map(); // localId -> record whose stream is still running
     const closed = new Map(); // localId -> {rec, at}; kept so a late stop-button change can update it
-    const stopAt = new Map(); // localId -> ms the user pressed Stop
     let dom = []; // confirmed stop-button intervals {start, end, recId}
     let shown = false; // confirmed stop-button state
     let candidate = { visible: false, since: 0 };
@@ -31,44 +30,60 @@
         case 'start': return onStart(msg);
         case 'stop': return onStop(msg);
         case 'end': return r && onEnd(r, msg);
-        case 'firstByte': if (r) r.firstByte = msg.t; return;
+        case 'firstByte': if (r) r.firstByte = r.lastSeen = msg.t, write(r); return;
+        // A throttled sign of life: every other tab counts this reply from it (spec §6b).
+        case 'alive': if (r) r.lastSeen = msg.t, write(r); return;
         case 'finished': if (r) r.finished = msg.t; return;
         case 'message': if (r) mergeServer(r.server, msg.sig); return;
       }
     }
 
-    function onStart({ localId, t }) {
-      const r = {
-        id: localId, site, start: t, firstByte: null, finished: null, end: null, outcome: 'unknown',
-        source: 'fetch-only', confidence: 'high', flags: [], dom: null, server: {},
+    function blank(over) {
+      return {
+        site, tabId, firstByte: null, finished: null, end: null, lastSeen: null, outcome: 'unknown',
+        source: 'fetch-only', confidence: 'high', flags: [], dom: null,
+        sent: { conversationId: null, messageId: null }, recovered: null, server: {}, ...over,
       };
+    }
+
+    function onStart({ localId, t, sent }) {
+      const r = blank({
+        id: localId, start: t,
+        sent: { conversationId: sent?.conversationId ?? null, messageId: sent?.messageId ?? null },
+      });
       open.set(localId, r);
       const d = dom.find((x) => !x.recId && ns.withinPairWindow(t, x.start));
       if (d) attach(r, d);
       write(r);
     }
 
+    // Stop does not cut the stream, so [DONE] still arrives seconds later. The record is
+    // finished here instead, at the press, so no other tab keeps counting work the user
+    // already cancelled. It moves to `closed`, so the later end signal finds nothing to do.
     function onStop({ t }) {
-      const ids = [...open.keys()];
-      if (ids.length) stopAt.set(ids[ids.length - 1], t);
+      const id = [...open.keys()].at(-1);
+      const r = id && open.get(id);
+      if (!r) return;
+      open.delete(r.id);
+      finish(r, t, 'stopped');
+      closed.set(r.id, { rec: r, at: t });
+      write(r);
     }
 
     function onEnd(r, { t, lastChunk, outcome }) {
       open.delete(r.id);
-      if (stopAt.has(r.id)) {
-        r.outcome = 'stopped';
-        r.end = Math.min(stopAt.get(r.id), t);
-        stopAt.delete(r.id);
-      } else if (outcome === 'completed') {
-        r.outcome = 'completed';
-        r.end = t;
-      } else {
-        r.outcome = 'error';
-        r.end = lastChunk ?? t;
-      }
-      Object.assign(r, ns.classify({ fetch: { end: r.end }, dom: r.dom }));
+      if (r.end !== null) return; // already final: the Stop press
+      if (outcome === 'completed') finish(r, t, 'completed');
+      else finish(r, lastChunk ?? t, 'error');
       closed.set(r.id, { rec: r, at: t });
       write(r);
+    }
+
+    function finish(r, end, outcome) {
+      r.end = end;
+      r.outcome = outcome;
+      r.lastSeen = end;
+      Object.assign(r, ns.classify({ fetch: { end }, dom: r.dom }));
     }
 
     function attach(r, d) {
@@ -118,10 +133,12 @@
       confirm(t);
       for (const d of dom) {
         if (d.recId || d.end === null || t - d.start < DOM_ONLY_AFTER_MS) continue;
-        const r = {
-          id: newId(), site, start: d.start, firstByte: null, finished: null, end: d.end, outcome: 'unknown',
-          ...ns.classify({ fetch: null, dom: d }), dom: { start: d.start, end: d.end }, server: {},
-        };
+        // The same shape as a fetch record, so the total adds them without special-casing.
+        // Its sign of life is the moment the stop button went away.
+        const r = blank({
+          id: newId(), start: d.start, end: d.end, lastSeen: d.end,
+          ...ns.classify({ fetch: null, dom: d }), dom: { start: d.start, end: d.end },
+        });
         d.recId = r.id;
         write(r);
       }
@@ -129,16 +146,6 @@
       for (const [id, c] of closed) if (t - c.at > FORGET_AFTER_MS) closed.delete(id);
     }
 
-    // Running time of this tab's open streams, for the live counter. A stopped stream is
-    // frozen at the stop time, matching how onEnd will save it.
-    function liveMs(now) {
-      let ms = 0;
-      for (const r of open.values()) ms += Math.max(0, Math.min(now, stopAt.get(r.id) ?? now) - r.start);
-      return ms;
-    }
-
-    const isLive = () => [...open.keys()].some((id) => !stopAt.has(id));
-
-    return { onSignal, domRaw, confirm, tick, liveMs, isLive };
+    return { onSignal, domRaw, confirm, tick };
   };
 })(globalThis);

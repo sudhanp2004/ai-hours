@@ -28,7 +28,18 @@ test('every referenced file exists', () => {
 
 test('scripts load after their dependencies', () => {
   assert.deepEqual(scripts('MAIN'), ['src/sse.js', 'src/chatgpt-network.js', 'src/main-world.js']);
-  assert.deepEqual(scripts('ISOLATED'), ['src/chatgpt-page.js', 'src/verify.js', 'src/tracker.js', 'src/total.js', 'src/overlay.js', 'src/content.js']);
+  assert.deepEqual(scripts('ISOLATED'), [
+    'src/chatgpt-page.js', 'src/verify.js', 'src/reconcile.js', 'src/tracker.js',
+    'src/total.js', 'src/overlay.js', 'src/content.js',
+  ]);
+});
+
+// The worker shares reconcile.js with the content script, so it must be an ES module to
+// import it (a classic worker has no importScripts in MV3).
+test('the service worker is a module, and imports the file it needs', () => {
+  assert.equal(manifest.background.type, 'module');
+  const worker = fs.readFileSync(path.join(root, manifest.background.service_worker), 'utf8');
+  assert.match(worker, /import '\.\/reconcile\.js'/);
 });
 
 // Chrome injects a file listed in two content_scripts entries only once per frame, so a
@@ -56,6 +67,9 @@ test('each world is self-sufficient', () => {
   assert.equal(typeof isolated.chatgpt.site, 'string');
   assert.equal(typeof isolated.chatgpt.stopButton, 'string');
   assert.equal(typeof isolated.createTracker, 'function');
+  assert.equal(typeof isolated.matchTurn, 'function');
+  assert.equal(typeof isolated.recover, 'function');
   assert.equal(typeof isolated.summarize, 'function');
+  assert.equal(typeof isolated.liveTotal, 'function');
   assert.equal(typeof isolated.createOverlay, 'function');
 });

@@ -7,7 +7,7 @@ const { createTracker } = globalThis.__aiHours;
 function setup() {
   const writes = [];
   let n = 0;
-  const tracker = createTracker({ site: 'chatgpt', newId: () => `dom-${++n}`, write: (r) => writes.push(structuredClone(r)) });
+  const tracker = createTracker({ site: 'chatgpt', tabId: 7, newId: () => `dom-${++n}`, write: (r) => writes.push(structuredClone(r)) });
   const latest = (id) => writes.filter((r) => r.id === id).at(-1);
   const sig = (type, fields) => tracker.onSignal({ __aih: 1, type, ...fields });
   const show = (t) => { tracker.domRaw(true, t); tracker.confirm(t + 350); };
@@ -22,11 +22,38 @@ const msg = (over) => ({
 
 test('start writes an unknown record immediately', () => {
   const { writes, sig } = setup();
-  sig('start', { localId: 'a', t: 1000 });
+  sig('start', { localId: 'a', t: 1000, sent: { conversationId: 'c1', messageId: 'u1' } });
   assert.deepEqual(writes, [{
-    id: 'a', site: 'chatgpt', start: 1000, firstByte: null, finished: null, end: null, outcome: 'unknown',
-    source: 'fetch-only', confidence: 'high', flags: [], dom: null, server: {},
+    id: 'a', site: 'chatgpt', tabId: 7, start: 1000, firstByte: null, finished: null, end: null,
+    lastSeen: null, outcome: 'unknown', source: 'fetch-only', confidence: 'high', flags: [],
+    dom: null, sent: { conversationId: 'c1', messageId: 'u1' }, recovered: null, server: {},
   }]);
+});
+
+test('the record carries its tab id, so a close can be matched to it', () => {
+  const { latest, sig } = setup();
+  sig('start', { localId: 'a', t: 1000 });
+  assert.equal(latest('a').tabId, 7);
+});
+
+test('a missing sent payload still records empty ids, never undefined', () => {
+  const { latest, sig } = setup();
+  sig('start', { localId: 'a', t: 1000 });
+  assert.deepEqual(latest('a').sent, { conversationId: null, messageId: null });
+});
+
+test('every chunk refreshes lastSeen, which is the sign of life for other tabs', () => {
+  const { latest, sig } = setup();
+  sig('start', { localId: 'a', t: 1000 });
+  sig('firstByte', { localId: 'a', t: 3000 });
+  sig('alive', { localId: 'a', t: 5000 });
+  assert.equal(latest('a').lastSeen, 5000);
+});
+
+test('alive for an unknown stream is ignored, not written as a phantom record', () => {
+  const { writes, sig } = setup();
+  sig('alive', { localId: 'ghost', t: 5000 });
+  assert.deepEqual(writes, []);
 });
 
 test('completed stream with stop button → fetch times, high confidence', () => {
@@ -134,9 +161,12 @@ test('stop button with no fetch → one dom-only record after 10 s', () => {
   assert.equal(writes.length, 0);
   tracker.tick(11001);
   tracker.tick(12000);
+  // A DOM-only record has the same shape as every other record, so the total treats them
+  // alike. Its sign of life is the moment the stop button went away.
   assert.deepEqual(writes, [{
-    id: 'dom-1', site: 'chatgpt', start: 1000, firstByte: null, finished: null, end: 4000, outcome: 'unknown',
-    source: 'dom-only', confidence: 'low', flags: ['fetch-missing'], dom: { start: 1000, end: 4000 }, server: {},
+    id: 'dom-1', site: 'chatgpt', tabId: 7, start: 1000, firstByte: null, finished: null, end: 4000,
+    lastSeen: 4000, outcome: 'unknown', source: 'dom-only', confidence: 'low', flags: ['fetch-missing'],
+    dom: { start: 1000, end: 4000 }, sent: { conversationId: null, messageId: null }, recovered: null, server: {},
   }]);
 });
 
@@ -172,30 +202,32 @@ test('request that fails before the stop-button debounce settles is still paired
   assert.equal(writes.filter((r) => r.id.startsWith('dom-')).length, 0);
 });
 
-test('liveMs sums the running time of this tab\'s open streams; isLive tracks them', () => {
-  const { tracker, sig } = setup();
-  assert.equal(tracker.liveMs(5000), 0);
-  assert.equal(tracker.isLive(), false);
+// Pressing Stop does not cut ChatGPT's stream: the stop button fires its own request and
+// [DONE] still arrives, up to ~5 s later. Every other tab's pill is counting that stream
+// meanwhile, so the stop time is saved the moment the user presses it, not at [DONE].
+test('pressing Stop saves the record at once, so every pill freezes at the press', () => {
+  const { latest, sig, show } = setup();
   sig('start', { localId: 'a', t: 1000 });
-  sig('start', { localId: 'b', t: 3000 });
-  assert.equal(tracker.liveMs(5000), 4000 + 2000);
-  assert.equal(tracker.isLive(), true);
-  sig('end', { localId: 'a', t: 6000, lastChunk: 6000, outcome: 'completed' });
-  sig('end', { localId: 'b', t: 6000, lastChunk: 6000, outcome: 'completed' });
-  assert.equal(tracker.liveMs(7000), 0);
-  assert.equal(tracker.isLive(), false);
+  show(1060);
+  sig('stop', { t: 4000 });
+  assert.deepEqual(
+    { outcome: latest('a').outcome, end: latest('a').end, source: latest('a').source },
+    { outcome: 'stopped', end: 4000, source: 'fetch+dom' },
+  );
 });
 
-test('liveMs freezes a stopped stream at the stop time, matching how it will be saved', () => {
-  const { tracker, sig } = setup();
+test('the [DONE] after a stop does not extend the frozen end or rewrite it', () => {
+  const { writes, latest, sig } = setup();
   sig('start', { localId: 'a', t: 1000 });
   sig('stop', { t: 4000 });
-  assert.equal(tracker.liveMs(9000), 3000);
-  assert.equal(tracker.isLive(), false);
+  const writesAtStop = writes.length;
+  sig('end', { localId: 'a', t: 9000, lastChunk: 9000, outcome: 'completed' });
+  assert.equal(writes.length, writesAtStop, 'the end signal has nothing left to change');
+  assert.deepEqual([latest('a').outcome, latest('a').end], ['stopped', 4000]);
 });
 
-test('liveMs is never negative', () => {
-  const { tracker, sig } = setup();
-  sig('start', { localId: 'a', t: 5000 });
-  assert.equal(tracker.liveMs(4000), 0);
+test('a stop with nothing running writes nothing', () => {
+  const { writes, sig } = setup();
+  sig('stop', { t: 4000 });
+  assert.deepEqual(writes, []);
 });

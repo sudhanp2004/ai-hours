@@ -5,7 +5,7 @@
   "description": "Counts how long AI has worked for you. Records when AI works, never what was said.",
   "permissions": ["storage", "unlimitedStorage", "scripting"],
   "host_permissions": ["https://chatgpt.com/*"],
-  "background": { "service_worker": "src/background.js" },
+  "background": { "service_worker": "src/background.js", "type": "module" },
   "action": { "default_popup": "popup/popup.html", "default_title": "AI Hours" },
   "content_scripts": [
     {
@@ -16,7 +16,7 @@
     },
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["src/chatgpt-page.js", "src/verify.js", "src/tracker.js", "src/total.js", "src/overlay.js", "src/content.js"],
+      "js": ["src/chatgpt-page.js", "src/verify.js", "src/reconcile.js", "src/tracker.js", "src/total.js", "src/overlay.js", "src/content.js"],
       "run_at": "document_start"
     }
   ]
