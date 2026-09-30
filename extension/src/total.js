@@ -17,6 +17,15 @@
   ns.hasRecentHealthFlags = (records, now) =>
     records.some((r) => r.flags?.length > 0 && now - r.start < HEALTH_WINDOW_MS);
 
+  ns.formatClock = function formatClock(ms) {
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h) return `${h}h ${m}m ${s % 60}s`;
+    if (m) return `${m}m ${s % 60}s`;
+    return `${s}s`;
+  };
+
   ns.formatDuration = function formatDuration(ms) {
     const s = Math.floor(ms / 1000);
     const h = Math.floor(s / 3600);

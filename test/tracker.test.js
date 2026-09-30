@@ -171,3 +171,31 @@ test('request that fails before the stop-button debounce settles is still paired
   assert.deepEqual(latest('a').dom, { start: 1060, end: 1500 });
   assert.equal(writes.filter((r) => r.id.startsWith('dom-')).length, 0);
 });
+
+test('liveMs sums the running time of this tab\'s open streams; isLive tracks them', () => {
+  const { tracker, sig } = setup();
+  assert.equal(tracker.liveMs(5000), 0);
+  assert.equal(tracker.isLive(), false);
+  sig('start', { localId: 'a', t: 1000 });
+  sig('start', { localId: 'b', t: 3000 });
+  assert.equal(tracker.liveMs(5000), 4000 + 2000);
+  assert.equal(tracker.isLive(), true);
+  sig('end', { localId: 'a', t: 6000, lastChunk: 6000, outcome: 'completed' });
+  sig('end', { localId: 'b', t: 6000, lastChunk: 6000, outcome: 'completed' });
+  assert.equal(tracker.liveMs(7000), 0);
+  assert.equal(tracker.isLive(), false);
+});
+
+test('liveMs freezes a stopped stream at the stop time, matching how it will be saved', () => {
+  const { tracker, sig } = setup();
+  sig('start', { localId: 'a', t: 1000 });
+  sig('stop', { t: 4000 });
+  assert.equal(tracker.liveMs(9000), 3000);
+  assert.equal(tracker.isLive(), false);
+});
+
+test('liveMs is never negative', () => {
+  const { tracker, sig } = setup();
+  sig('start', { localId: 'a', t: 5000 });
+  assert.equal(tracker.liveMs(4000), 0);
+});

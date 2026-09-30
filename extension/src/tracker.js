@@ -129,6 +129,16 @@
       for (const [id, c] of closed) if (t - c.at > FORGET_AFTER_MS) closed.delete(id);
     }
 
-    return { onSignal, domRaw, confirm, tick };
+    // Running time of this tab's open streams, for the live counter. A stopped stream is
+    // frozen at the stop time, matching how onEnd will save it.
+    function liveMs(now) {
+      let ms = 0;
+      for (const r of open.values()) ms += Math.max(0, Math.min(now, stopAt.get(r.id) ?? now) - r.start);
+      return ms;
+    }
+
+    const isLive = () => [...open.keys()].some((id) => !stopAt.has(id));
+
+    return { onSignal, domRaw, confirm, tick, liveMs, isLive };
   };
 })(globalThis);

@@ -24,7 +24,7 @@ Product principles (unchanged from handoff): one number · honest (unknown is sh
 |---|---|---|---|
 | ⚑1 | Sites | ChatGPT only | Handoff suggestion; the spike only verified ChatGPT |
 | ⚑2 | Local vs server | Local only (`chrome.storage.local`) | No feature in v1 needs a server |
-| ⚑3 | Live counter | None. The popup shows the total when opened | Near-invisible; smallest UI |
+| ⚑3 | Live counter | **Changed 2026-09-30 (user decision):** a pill on chatgpt.com shows the total and counts up live while this tab's responses stream | The user wants to see AI working; a stopped stream freezes at the stop time |
 | ⚑4 | Background agents (handoff §9.1) | Not reconstructed in v1. Server ids + timestamps are stored so v2 can reconcile without a data migration | Needs its own spike (a real deep-research run) |
 | ⚑5 | Stopped responses | `end` = time of the `stop_conversation` request, not `[DONE]` | Spike: `[DONE]` arrives ~5.5 s after the stop press; the user stopped the AI at the press |
 | ⚑6 | Unknown durations | Popup shows a small footnote: "+ N responses with unknown duration" | Honest principle: unknown is shown as unknown, not hidden |
@@ -55,7 +55,8 @@ chatgpt.com page
  │    chatgpt-page.js      site name + stop-button selector (a file can't be listed in both worlds: Chrome injects it only once)
  │    verify.js            fetch-vs-DOM cross-verification (pure)
  │    tracker.js           per-tab state machine: signals + DOM → records (pure)
- │    content.js           wiring: message listener, DOM observer, storage writes
+ │    total.js + overlay.js live counter pill (shadow DOM, pointer-events: none)
+ │    content.js           wiring: message listener, DOM observer, storage writes, counter
  │
  ├─ service worker        background.js: ONLY re-injects scripts into open tabs on install/update
  └─ popup                 total.js (pure summary/format) + popup.html/js: reads records, shows total
@@ -149,4 +150,4 @@ Storage size: ~580 B/record (measured in review) → the default 10 MB quota wou
 - **Manual E2E on chatgpt.com** (a checklist in the plan): rerun spike tests A–D. Records and outcomes must match expectations, the popup total must be within ±1 s of the sum of `end − start`, and a closed-tab test must produce one unknown record.
 
 ## 10. Out of scope for v1
-Other sites · background-agent reconstruction · share card · server/sync · live counter · WebSocket capture · anti-cheat.
+Other sites · background-agent reconstruction · share card · server/sync · live ticking for streams in *other* tabs (they appear when they finish) · WebSocket capture · anti-cheat.

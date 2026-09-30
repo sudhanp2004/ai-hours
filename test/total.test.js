@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 require('../extension/src/total.js');
-const { summarize, hasRecentHealthFlags, formatDuration } = globalThis.__aiHours;
+const { summarize, hasRecentHealthFlags, formatDuration, formatClock } = globalThis.__aiHours;
 
 const HOUR = 3600000;
 const NOW = 1790764800000;
@@ -43,4 +43,12 @@ test('formatDuration', () => {
   assert.equal(formatDuration(HOUR), '1h 0m');
   assert.equal(formatDuration(3 * HOUR + 12 * 60000 + 59000), '3h 12m');
   assert.equal(formatDuration(312 * HOUR), '312h 0m');
+});
+
+test('formatClock always shows seconds, for the live counter', () => {
+  assert.equal(formatClock(0), '0s');
+  assert.equal(formatClock(42999), '42s');
+  assert.equal(formatClock(754000), '12m 34s');
+  assert.equal(formatClock(3 * HOUR + 12 * 60000 + 41000), '3h 12m 41s');
+  assert.equal(formatClock(312 * HOUR), '312h 0m 0s');
 });
