@@ -15,24 +15,38 @@
       background: var(--bg); color: var(--fg); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
       font: 600 12px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums;
       pointer-events: none; user-select: none;
+      /* Arrives like a popup rather than already being there: hidden on the first frame,
+         faded in once the document is up, so the eye follows it in instead of finding it. */
+      opacity: 0; transform: translateY(-6px) scale(0.96);
+      transition: opacity 260ms ease-out, transform 260ms cubic-bezier(0.2, 0.9, 0.3, 1);
     }
     @media (prefers-color-scheme: dark) {
       .pill { --bg: rgba(40, 40, 40, 0.92); --fg: #f2f2f2; --idle: #6b6b6b; }
     }
+    :host(.shown) .pill { opacity: 1; transform: none; }
     .width { color: var(--live); font-weight: 700; }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--idle); }
     .live .dot { background: var(--live); animation: pulse 1s ease-in-out infinite; }
     @keyframes pulse { 50% { opacity: 0.35; } }
-    @media (prefers-reduced-motion: reduce) { .live .dot { animation: none; } }
+    @media (prefers-reduced-motion: reduce) {
+      .pill { transition: none; transform: none; }
+      .live .dot { animation: none; }
+    }
   `;
 
   ns.createOverlay = function createOverlay(doc) {
+    // Reloading the extension gives the new copy a different isolated world, so the old
+    // content script's cleanup is invisible to us and its pill would sit in the page for
+    // good. Sweeping by tag name is the only check that crosses that boundary.
+    for (const stale of doc.querySelectorAll('ai-hours-counter')) stale.remove();
+
     const host = doc.createElement('ai-hours-counter');
     const shadow = host.attachShadow({ mode: 'closed' });
     shadow.innerHTML = `<style>${CSS}</style><div class="pill"><span class="dot"></span><span class="time"></span><span class="width"></span></div>`;
     const pill = shadow.querySelector('.pill');
     const time = shadow.querySelector('.time');
     const width = shadow.querySelector('.width');
+    let revealed = false;
 
     return {
       // `working` is how many replies are gaining time across every tab. Shown when above 1,
@@ -50,6 +64,14 @@
             : working === 1
               ? 'AI is working for you'
               : 'Time AI has worked for you';
+        // Once the page has been up long enough to be read, fade in. Waiting for a paint
+        // matters: body is empty at document_start, so this is the first moment we can.
+        if (!revealed && doc.body && doc.body.isConnected) {
+          revealed = true;
+          const show = () => host.classList.add('shown');
+          if (typeof requestAnimationFrame === 'function') requestAnimationFrame(show);
+          else show();
+        }
       },
       remove() {
         host.remove();

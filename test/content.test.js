@@ -17,19 +17,23 @@ const rec = (over) => ({
   dom: null, sent: { conversationId: null, messageId: null }, recovered: null, server: {}, ...over,
 });
 
-// A minimal document: the overlay needs createElement/attachShadow, the observer a node.
+// A minimal document: the overlay needs createElement/attachShadow, the observer a node,
+// and querySelectorAll because it sweeps any pill left over from an earlier extension copy.
 function fakeDocument(selector) {
   const makeEl = () => {
     const el = {
-      isConnected: false, textContent: '', classList: { toggle() {} }, style: {}, dataset: {},
+      isConnected: false, textContent: '', classList: { toggle() {}, add() {} }, style: {}, dataset: {},
       setAttribute() {}, getAttribute: () => null, remove() {}, appendChild() {}, querySelector: () => null,
     };
     return el;
   };
+  const body = makeEl();
+  body.isConnected = true; // a loaded page, so the pill reveals itself
   return {
-    body: makeEl(),
+    body,
     createElement: () => ({ ...makeEl(), attachShadow: () => ({ innerHTML: '', querySelector: makeEl }) }),
     querySelector: () => null,
+    querySelectorAll: () => [],
     documentElement: makeEl(),
   };
 }
