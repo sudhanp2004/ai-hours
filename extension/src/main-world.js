@@ -1,0 +1,72 @@
+// Runs in the page's MAIN world at document_start. Wraps fetch to time chat streams and
+// posts structural signals to content.js. Never posts message text.
+(function () {
+  const FLAG = Symbol.for('aiHours.fetchWrapped');
+  if (window.fetch[FLAG]) return; // re-injected after an extension update: keep the first wrapper
+
+  const ns = () => globalThis.__aiHours; // read at call time so re-injected adapters take effect
+  const origFetch = window.fetch;
+  const post = (type, payload) => window.postMessage({ __aih: 1, type, ...payload }, location.origin);
+
+  function pathOf(input) {
+    try {
+      const u = new URL(input instanceof Request ? input.url : String(input), location.href);
+      return u.origin === location.origin ? u.pathname : '';
+    } catch {
+      return '';
+    }
+  }
+
+  async function wrappedFetch(input, init) {
+    const site = ns().chatgpt;
+    const path = pathOf(input);
+    if (site.stopUrl.test(path)) post('stop', { t: Date.now() });
+    if (!site.streamUrl.test(path)) return origFetch.apply(window, arguments);
+
+    const localId = crypto.randomUUID();
+    post('start', { localId, t: Date.now() });
+    let res;
+    try {
+      res = await origFetch.apply(window, arguments);
+    } catch (e) {
+      post('end', { localId, t: Date.now(), lastChunk: null, outcome: 'error' });
+      throw e;
+    }
+    const type = res.headers.get('content-type') || '';
+    if (res.ok && type.includes('text/event-stream') && res.body) readStream(localId, res.clone());
+    else post('end', { localId, t: Date.now(), lastChunk: null, outcome: 'error' });
+    return res;
+  }
+  wrappedFetch[FLAG] = true;
+  window.fetch = wrappedFetch;
+
+  async function readStream(localId, res) {
+    const { chatgpt: site, createSseParser } = ns();
+    let lastChunk = null;
+    let doneAt = null;
+    const parser = createSseParser((ev) => {
+      const sig = site.parseEvent(ev);
+      if (!sig) return;
+      if (sig.kind === 'done') doneAt = lastChunk;
+      else if (sig.kind === 'finished') post('finished', { localId, t: lastChunk });
+      else if (sig.kind === 'message') post('message', { localId, sig });
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const t = Date.now();
+        if (lastChunk === null) post('firstByte', { localId, t });
+        lastChunk = t;
+        parser.push(decoder.decode(value, { stream: true }));
+      }
+      parser.push(decoder.decode());
+      parser.end();
+      post('end', { localId, t: doneAt ?? Date.now(), lastChunk, outcome: doneAt !== null ? 'completed' : 'closed' });
+    } catch {
+      post('end', { localId, t: Date.now(), lastChunk, outcome: 'error' });
+    }
+  }
+})();
