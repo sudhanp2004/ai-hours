@@ -8,11 +8,10 @@
     site: site.site,
     newId: () => crypto.randomUUID(),
     write(rec) {
-      try {
-        chrome.storage.local.set({ ['rec:' + rec.id]: rec }).catch(stop);
-      } catch {
-        stop(); // extension context invalidated; the re-injected copy takes over
-      }
+      // Orphaned by an extension update: the re-injected copy takes over.
+      if (!chrome.runtime?.id) return stop();
+      // Any other failure is logged, never fatal: stopping would silently freeze the count.
+      chrome.storage.local.set({ ['rec:' + rec.id]: rec }).catch((e) => console.warn('AI Hours: could not save record', e));
     },
   });
 

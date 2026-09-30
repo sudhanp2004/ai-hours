@@ -26,7 +26,10 @@ function load() {
   }
 }
 load();
-load(); // simulates re-injection after an extension update: must not double-wrap
+// Page instrumentation (RUM/Sentry) or another extension wraps fetch after us...
+const ours = window.fetch;
+window.fetch = function thirdPartyWrapper(...args) { return ours.apply(this, args); };
+load(); // ...then an extension update re-injects us: must not add a second wrapper
 
 async function waitForEnd() {
   for (let i = 0; i < 400; i++) {

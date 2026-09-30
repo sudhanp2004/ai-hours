@@ -1,8 +1,11 @@
 // Runs in the page's MAIN world at document_start. Wraps fetch to time chat streams and
 // posts structural signals to content.js. Never posts message text.
 (function () {
+  // The flag lives on window, not on fetch: something else may wrap fetch after us, and a
+  // re-injection after an extension update must still see that we're already installed.
   const FLAG = Symbol.for('aiHours.fetchWrapped');
-  if (window.fetch[FLAG]) return; // re-injected after an extension update: keep the first wrapper
+  if (window[FLAG]) return;
+  Object.defineProperty(window, FLAG, { value: true });
 
   const ns = () => globalThis.__aiHours; // read at call time so re-injected adapters take effect
   const origFetch = window.fetch;
@@ -37,7 +40,6 @@
     else post('end', { localId, t: Date.now(), lastChunk: null, outcome: 'error' });
     return res;
   }
-  wrappedFetch[FLAG] = true;
   window.fetch = wrappedFetch;
 
   async function readStream(localId, res) {

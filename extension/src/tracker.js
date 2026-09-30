@@ -91,8 +91,12 @@
     function domShown(t) {
       const d = { start: t, end: null, recId: null };
       dom.push(d);
-      const r = [...open.values()].find((x) => !x.dom && ns.withinPairWindow(x.start, t));
-      if (r) attach(r, d);
+      // A fast failure (e.g. HTTP 429) can end before the debounce confirms the button, so look in closed too.
+      const recs = [...open.values(), ...[...closed.values()].map((c) => c.rec)];
+      const r = recs.find((x) => !x.dom && ns.withinPairWindow(x.start, t));
+      if (!r) return;
+      attach(r, d);
+      if (r.end !== null) reclassify(r);
     }
 
     function domHidden(t) {
@@ -102,7 +106,10 @@
       const r = d.recId && (open.get(d.recId) || closed.get(d.recId)?.rec);
       if (!r) return;
       r.dom.end = t;
-      if (r.end === null) return;
+      if (r.end !== null) reclassify(r);
+    }
+
+    function reclassify(r) {
       Object.assign(r, ns.classify({ fetch: { end: r.end }, dom: r.dom }));
       write(r);
     }

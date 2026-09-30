@@ -9,7 +9,7 @@ const scripts = (world) => manifest.content_scripts.find((c) => (c.world || 'ISO
 
 test('permissions are minimal', () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.permissions, ['storage', 'scripting']);
+  assert.deepEqual(manifest.permissions, ['storage', 'unlimitedStorage', 'scripting']);
   assert.deepEqual(manifest.host_permissions, ['https://chatgpt.com/*']);
   for (const cs of manifest.content_scripts) {
     assert.deepEqual(cs.matches, ['https://chatgpt.com/*']);

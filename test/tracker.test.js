@@ -158,3 +158,16 @@ test('server merge: skips memory-context messages, keeps first reasoning start a
   sig('end', { localId: 'a', t: 5000, lastChunk: 5000, outcome: 'completed' });
   assert.deepEqual(latest('a').server, { messageId: 'r1', msgCreate: 2, reasoningStart: 10, reasoningEnd: 30 });
 });
+
+test('request that fails before the stop-button debounce settles is still paired, not double-counted', () => {
+  const { tracker, writes, latest, sig, show, hide } = setup();
+  sig('start', { localId: 'a', t: 1000 });
+  sig('end', { localId: 'a', t: 1200, lastChunk: null, outcome: 'error' });
+  show(1060);
+  hide(1500);
+  tracker.tick(20000);
+  assert.equal(latest('a').source, 'fetch+dom');
+  assert.deepEqual(latest('a').flags, []);
+  assert.deepEqual(latest('a').dom, { start: 1060, end: 1500 });
+  assert.equal(writes.filter((r) => r.id.startsWith('dom-')).length, 0);
+});

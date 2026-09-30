@@ -122,7 +122,7 @@ Content scripts can write `chrome.storage.local` directly, and the popup can rea
 ```
 Idempotency (v1): the key is `localId`, so a stream is recorded once. v2's background reconciliation dedups on `server.turnExchangeId` (handoff §9.7 resolved this way *if* task 1 confirms that the stream carries it; otherwise it's revisited).
 
-Storage size: ~400 B/record → 10k responses ≈ 4 MB, under the 10 MB `storage.local` quota. Revisit at v2.
+Storage size: ~580 B/record (measured in review) → the default 10 MB quota would fill after ~17k responses, so the extension requests `unlimitedStorage`. A failed write is logged, never fatal.
 
 ## 7. Edge cases
 
@@ -139,7 +139,7 @@ Storage size: ~400 B/record → 10k responses ≈ 4 MB, under the 10 MB `storage
 
 ## 8. Privacy & permissions
 
-- `host_permissions`: `https://chatgpt.com/*` only. `permissions`: `storage`, `scripting`.
+- `host_permissions`: `https://chatgpt.com/*` only. `permissions`: `storage`, `unlimitedStorage` (no install warning), `scripting`.
 - Stream text necessarily passes through the decoder in memory. Only the structural signals listed in §4 leave `parseEvent`. Nothing leaves the device.
 - `window.postMessage` is visible to the page, so the page could forge signals. That's acceptable for local-only v1. It becomes the anti-cheat problem (handoff §9.6) if a server is added.
 
