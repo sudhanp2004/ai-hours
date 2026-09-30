@@ -7,7 +7,10 @@
     :host { all: initial; }
     .pill {
       --bg: rgba(255, 255, 255, 0.92); --fg: #1a1a1a; --idle: #b0b0b0; --live: #10a37f;
-      position: fixed; right: 16px; bottom: 96px; z-index: 2147483647;
+      /* Top right, below ChatGPT's own header rather than inside it: the header's right end
+         holds the Share button and the account menu, and a pill on top of those reads as
+         part of the page instead of as a separate thing. 60px clears the ~48px header. */
+      position: fixed; right: 16px; top: 60px; z-index: 2147483647;
       display: flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 999px;
       background: var(--bg); color: var(--fg); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
       font: 600 12px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums;
