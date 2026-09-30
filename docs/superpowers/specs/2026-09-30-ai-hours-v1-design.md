@@ -43,6 +43,23 @@ Product principles (unchanged from handoff): one number · honest (unknown is sh
 - Conversation load: `GET /backend-api/conversations/{id}` → `messages[]`. User `create_time` = the send time on the client clock. All other timestamps are on the server clock. Per-turn grouping key: `metadata.turn_exchange_id` (also `request_id`). `finish_details.type` is `"stop"` or `"interrupted"`. Thinking has `reasoning_start_time`, `reasoning_end_time`, `finished_duration_sec`.
 - **Verified in v1 end-to-end run (2026-09-30):** stream message objects carry `turn_exchange_id` (present on every live record), so it can serve as the idempotency key for v2 reconciliation. The same run gave 5 `fetch+dom` records with no flags (completed and stopped), including a ~66 s response, and one `unknown` record for a request that produced no stream data.
 
+### ⚑7 Built but unverified on the wire (2026-10-01)
+
+Closed-tab recovery reads two payloads the v1 spike never looked at. The field names come
+from how ChatGPT's API has historically worked, not from an observation, so they are
+assumptions until the first run on the real site:
+
+| # | Assumption | If it is wrong | Fix |
+|---|---|---|---|
+| ⚑7a | The send body is JSON with `conversation_id` and a `messages[]` array whose last `author.role === 'user'` entry is the new message, with an `id` | `sent` is `{null, null}` on every record. Recovery still works, but only by the send-time fallback (±2 s), which needs the reply to be the one at that moment | one line in `sendIds` |
+| ⚑7b | The request passes the body as `init.body` (a string), not as a `Request` object or a stream | same as above: no ids, and the prompt is never read | read `input.clone().text()` when `init.body` is absent |
+| ⚑7c | A loaded conversation is fetched as `GET /backend-api/conversations/{id}` (plural) with `application/json` | no `conversation` signal, so a closed-tab record stays `pending` → counted as unknown. Nothing is invented | check the network tab; ChatGPT may load a chat from its own in-memory state instead of refetching |
+
+`spike/conversation-probe.js` is a throwaway DevTools snippet that prints the key names of
+both payloads (and nothing else) so ⚑7a–c can be confirmed in one paste. Until it is run,
+the honest description of this feature is: *recovery is implemented and unit-tested against
+the documented shape, but unproven against the live site.*
+
 ## 4. Architecture
 
 ```
