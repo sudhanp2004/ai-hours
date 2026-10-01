@@ -1,54 +1,54 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-require('../extension/src/chatgpt-network.js');
-require('../extension/src/chatgpt-page.js');
-const { chatgpt } = globalThis.__aiHours;
+require('../extension/src/sites/chatgpt-network.js');
+require('../extension/src/sites/chatgpt-page.js');
+const { site } = globalThis.__aiHours;
 
 const SECRET = 'SECRET-TEXT-MUST-NOT-LEAK';
 const ev = (x) => ({ event: 'delta', data: typeof x === 'string' ? x : JSON.stringify(x) });
 const roundtrip = (x) => JSON.stringify(x);
 
 test('stream and stop URL patterns match the verified endpoints only', () => {
-  assert.ok(chatgpt.streamUrl.test('/backend-api/f/conversation'));
-  assert.ok(chatgpt.streamUrl.test('/backend-anon/f/conversation'));
-  assert.ok(!chatgpt.streamUrl.test('/backend-api/f/conversation/prepare'));
-  assert.ok(!chatgpt.streamUrl.test('/backend-api/conversation/init'));
-  assert.ok(!chatgpt.streamUrl.test('/backend-api/conversation/experimental/generate_autocompletions'));
-  assert.ok(chatgpt.stopUrl.test('/backend-api/stop_conversation'));
+  assert.ok(site.streamUrl.test('/backend-api/f/conversation'));
+  assert.ok(site.streamUrl.test('/backend-anon/f/conversation'));
+  assert.ok(!site.streamUrl.test('/backend-api/f/conversation/prepare'));
+  assert.ok(!site.streamUrl.test('/backend-api/conversation/init'));
+  assert.ok(!site.streamUrl.test('/backend-api/conversation/experimental/generate_autocompletions'));
+  assert.ok(site.stopUrl.test('/backend-api/stop_conversation'));
 });
 
 // A conversation is loaded with the plural form; the singular one is a different endpoint
 // and reading it as a conversation would pair the wrong messages.
 test('conversation URL matches the plural load endpoint only', () => {
   const id = '6abce67c-11fc-83ee-bf0d-21bad86c85c0';
-  assert.ok(chatgpt.conversationUrl.test(`/backend-api/conversations/${id}`));
-  assert.ok(!chatgpt.conversationUrl.test(`/backend-api/conversation/${id}`));
-  assert.ok(!chatgpt.conversationUrl.test('/backend-api/conversations'));
-  assert.ok(!chatgpt.conversationUrl.test('/backend-api/conversations/not-a-uuid'));
+  assert.ok(site.conversationUrl.test(`/backend-api/conversations/${id}`));
+  assert.ok(!site.conversationUrl.test(`/backend-api/conversation/${id}`));
+  assert.ok(!site.conversationUrl.test('/backend-api/conversations'));
+  assert.ok(!site.conversationUrl.test('/backend-api/conversations/not-a-uuid'));
 });
 
 test('network and page halves merge into one config', () => {
-  assert.equal(chatgpt.site, 'chatgpt');
-  assert.equal(chatgpt.stopButton, 'button[data-testid="stop-button"]');
-  assert.equal(typeof chatgpt.parseEvent, 'function');
-  assert.equal(typeof chatgpt.parseConversation, 'function');
-  assert.equal(typeof chatgpt.sendIds, 'function');
+  assert.equal(site.site, 'chatgpt');
+  assert.equal(site.stopButton, 'button[data-testid="stop-button"]');
+  assert.equal(typeof site.parseEvent, 'function');
+  assert.equal(typeof site.parseConversation, 'function');
+  assert.equal(typeof site.sendIds, 'function');
 });
 
 test('[DONE] → done', () => {
-  assert.deepEqual(chatgpt.parseEvent(ev('[DONE]')), { kind: 'done' });
+  assert.deepEqual(site.parseEvent(ev('[DONE]')), { kind: 'done' });
 });
 
 test('non-JSON, non-object and unrelated events → null', () => {
-  assert.equal(chatgpt.parseEvent(ev('"v1"')), null);
-  assert.equal(chatgpt.parseEvent(ev('garbage')), null);
-  assert.equal(chatgpt.parseEvent(ev({ type: 'title_generation', title: SECRET })), null);
-  assert.equal(chatgpt.parseEvent(ev({ p: '/message/content/parts/0', o: 'append', v: SECRET })), null);
-  assert.equal(chatgpt.parseEvent(ev({ v: SECRET })), null);
+  assert.equal(site.parseEvent(ev('"v1"')), null);
+  assert.equal(site.parseEvent(ev('garbage')), null);
+  assert.equal(site.parseEvent(ev({ type: 'title_generation', title: SECRET })), null);
+  assert.equal(site.parseEvent(ev({ p: '/message/content/parts/0', o: 'append', v: SECRET })), null);
+  assert.equal(site.parseEvent(ev({ v: SECRET })), null);
 });
 
 test('message add → structural signal only', () => {
-  const sig = chatgpt.parseEvent(ev({
+  const sig = site.parseEvent(ev({
     o: 'add',
     v: {
       message: {
@@ -68,20 +68,20 @@ test('message add → structural signal only', () => {
 });
 
 test('message at top level (older shape) is also read', () => {
-  const sig = chatgpt.parseEvent(ev({ message: { id: 'm2', author: { role: 'assistant' }, status: 'finished_successfully' } }));
+  const sig = site.parseEvent(ev({ message: { id: 'm2', author: { role: 'assistant' }, status: 'finished_successfully' } }));
   assert.equal(sig.kind, 'message');
   assert.equal(sig.messageId, 'm2');
 });
 
 test('long strings are dropped, so text cannot leak through structural fields', () => {
-  const sig = chatgpt.parseEvent(ev({ v: { message: { author: { role: SECRET.repeat(4) }, content: { content_type: SECRET.repeat(4) } } } }));
+  const sig = site.parseEvent(ev({ v: { message: { author: { role: SECRET.repeat(4) }, content: { content_type: SECRET.repeat(4) } } } }));
   assert.equal(sig.role, null);
   assert.equal(sig.contentType, null);
   assert.ok(!roundtrip(sig).includes(SECRET));
 });
 
 test('batched patch that sets a finished status → finished', () => {
-  const sig = chatgpt.parseEvent(ev({
+  const sig = site.parseEvent(ev({
     p: '', o: 'patch',
     v: [
       { p: '/message/content/parts/0', o: 'append', v: SECRET },
@@ -93,8 +93,8 @@ test('batched patch that sets a finished status → finished', () => {
 });
 
 test('single-op status patch → finished; in_progress is not', () => {
-  assert.deepEqual(chatgpt.parseEvent(ev({ p: '/message/status', o: 'replace', v: 'finished_partial_completion' })), { kind: 'finished' });
-  assert.equal(chatgpt.parseEvent(ev({ p: '/message/status', o: 'replace', v: 'in_progress' })), null);
+  assert.deepEqual(site.parseEvent(ev({ p: '/message/status', o: 'replace', v: 'finished_partial_completion' })), { kind: 'finished' });
+  assert.equal(site.parseEvent(ev({ p: '/message/status', o: 'replace', v: 'in_progress' })), null);
 });
 
 // ---- sendIds: the send request body. Only the two ids may come out of it.
@@ -105,7 +105,7 @@ test('sendIds reads the conversation id and the new user message id', () => {
       { id: 'aaaaaaaa-0000-0000-0000-000000000000', author: { role: 'user' }, content: { parts: [SECRET] } },
     ],
   });
-  assert.deepEqual(chatgpt.sendIds(body), {
+  assert.deepEqual(site.sendIds(body), {
     conversationId: '6abce67c-11fc-83ee-bf0d-21bad86c85c0',
     messageId: 'aaaaaaaa-0000-0000-0000-000000000000',
   });
@@ -120,17 +120,17 @@ test('sendIds picks the last user message id, not an earlier one', () => {
       { id: 'second', author: { role: 'user' } },
     ],
   });
-  assert.equal(chatgpt.sendIds(body).messageId, 'second');
+  assert.equal(site.sendIds(body).messageId, 'second');
 });
 
 test('sendIds survives a missing conversation_id, a bad body and no messages', () => {
-  assert.deepEqual(chatgpt.sendIds(JSON.stringify({ messages: [{ id: 'x', author: { role: 'user' } }] })), {
+  assert.deepEqual(site.sendIds(JSON.stringify({ messages: [{ id: 'x', author: { role: 'user' } }] })), {
     conversationId: null,
     messageId: 'x',
   });
-  assert.deepEqual(chatgpt.sendIds('not json'), { conversationId: null, messageId: null });
-  assert.deepEqual(chatgpt.sendIds(null), { conversationId: null, messageId: null });
-  assert.deepEqual(chatgpt.sendIds(JSON.stringify({})), { conversationId: null, messageId: null });
+  assert.deepEqual(site.sendIds('not json'), { conversationId: null, messageId: null });
+  assert.deepEqual(site.sendIds(null), { conversationId: null, messageId: null });
+  assert.deepEqual(site.sendIds(JSON.stringify({})), { conversationId: null, messageId: null });
 });
 
 test('sendIds never returns prompt text', () => {
@@ -139,7 +139,7 @@ test('sendIds never returns prompt text', () => {
     prompt: SECRET,
     messages: [{ id: 'mid', author: { role: 'user' }, content: { parts: [SECRET] } }],
   });
-  assert.ok(!roundtrip(chatgpt.sendIds(body)).includes(SECRET));
+  assert.ok(!roundtrip(site.sendIds(body)).includes(SECRET));
 });
 
 // ---- parseConversation: the load response. Ids, roles, statuses and timestamps only.
@@ -174,7 +174,7 @@ test('parseConversation groups messages into turns keyed by turn_exchange_id', (
       }),
     ],
   };
-  const turns = chatgpt.parseConversation(json);
+  const turns = site.parseConversation(json);
   assert.equal(turns.length, 2);
   assert.equal(turns[0].turnExchangeId, 'tx-a');
   assert.equal(turns[0].userCreateTime, 1790764720.263);
@@ -193,7 +193,7 @@ test('parseConversation reads the user message id so a 1-second-old close can ma
       convMessage({ author: { role: 'assistant' }, create_time: 100, update_time: 130 }),
     ],
   };
-  const [turn] = chatgpt.parseConversation(json);
+  const [turn] = site.parseConversation(json);
   assert.equal(turn.userMessageId, 'user-abc');
 });
 
@@ -204,7 +204,7 @@ test('parseConversation prefers the assistant turn id over the user message id',
       convMessage({ author: { role: 'assistant' }, metadata: { turn_exchange_id: 'assistant-tx' } }),
     ],
   };
-  const [turn] = chatgpt.parseConversation(json);
+  const [turn] = site.parseConversation(json);
   assert.equal(turn.turnExchangeId, 'assistant-tx');
 });
 
@@ -217,7 +217,7 @@ test('parseConversation keeps the earliest assistant create_time in a turn', () 
       convMessage({ author: { role: 'assistant' }, create_time: 210, update_time: 240 }),
     ],
   };
-  const [turn] = chatgpt.parseConversation(json);
+  const [turn] = site.parseConversation(json);
   assert.equal(turn.startSec, 200);
   assert.equal(turn.endSec, 240);
 });
@@ -229,7 +229,7 @@ test('parseConversation ends a turn with the latest update_time', () => {
       convMessage({ author: { role: 'assistant' }, create_time: 201, update_time: 260 }),
     ],
   };
-  const [turn] = chatgpt.parseConversation(json);
+  const [turn] = site.parseConversation(json);
   assert.equal(turn.endSec, 260);
 });
 
@@ -244,19 +244,19 @@ test('parseConversation reports the interrupted finish type', () => {
       }),
     ],
   };
-  assert.equal(chatgpt.parseConversation(json)[0].finishType, 'interrupted');
+  assert.equal(site.parseConversation(json)[0].finishType, 'interrupted');
 });
 
 test('parseConversation returns nothing usable for a malformed response', () => {
-  assert.deepEqual(chatgpt.parseConversation(null), []);
-  assert.deepEqual(chatgpt.parseConversation({}), []);
-  assert.deepEqual(chatgpt.parseConversation({ messages: 'x' }), []);
-  assert.deepEqual(chatgpt.parseConversation({ messages: [null, 3, 'y'] }), []);
+  assert.deepEqual(site.parseConversation(null), []);
+  assert.deepEqual(site.parseConversation({}), []);
+  assert.deepEqual(site.parseConversation({ messages: 'x' }), []);
+  assert.deepEqual(site.parseConversation({ messages: [null, 3, 'y'] }), []);
 });
 
 test('parseConversation keeps a turn with no assistant reply (still generating)', () => {
   const json = { messages: [convMessage({ author: { role: 'user' }, create_time: 100, metadata: { turn_exchange_id: 'tx-1' } })] };
-  const [turn] = chatgpt.parseConversation(json);
+  const [turn] = site.parseConversation(json);
   assert.equal(turn.turnExchangeId, 'tx-1');
   assert.equal(turn.startSec, null);
   assert.equal(turn.endSec, null);
@@ -273,5 +273,5 @@ test('no conversation field ever carries message text', () => {
       }),
     ],
   };
-  assert.ok(!roundtrip(chatgpt.parseConversation(json)).includes(SECRET));
+  assert.ok(!roundtrip(site.parseConversation(json)).includes(SECRET));
 });

@@ -23,7 +23,7 @@ Product principles (unchanged from handoff): one number · honest (unknown is sh
 ### v1 scope defaults: ⚑ confirm or change on review
 | # | Topic | Proposed default | Why |
 |---|---|---|---|
-| ⚑1 | Sites | ChatGPT only | Handoff suggestion; the spike only verified ChatGPT |
+| ⚑1 | Sites | **Changed 2026-10-01 (user decision):** scaffold every major chat LLM, enable only the ones verified on the wire. See §11. | The ChatGPT spike is the only verified site, so anything else would be guesswork. Scaffolding the shape now costs little; enabling a site costs a probe |
 | ⚑2 | Local vs server | Local only (`chrome.storage.local`) | No feature in v1 needs a server |
 | ⚑3 | Live counter | **Changed 2026-09-30 (user decision):** a pill on chatgpt.com shows the total and counts up live while responses stream. **Changed again 2026-10-01:** it counts *every* tab's open replies, not just its own, and shows `×N` while N replies are running | The user wants to see AI working; a stopped stream freezes at the stop time. Cross-tab because the total jumped in one lump when a second tab finished, which hid the point of the product |
 | ⚑4 | Background agents (handoff §9.1) | **Changed 2026-10-01 (user decision):** in scope. Closing the tab only stops us *watching*; ChatGPT keeps generating and saves the reply. A record whose tab closed becomes `pending` and is finished later from `GET /backend-api/conversations/{id}` (option 2 of the handoff's list, reached from a new direction) | The user pointed out that AI still infers after a close, so "stop counting at close" would undercount |
@@ -63,22 +63,23 @@ the documented shape, but unproven against the live site.*
 ## 4. Architecture
 
 ```
-chatgpt.com page
+chatgpt.com page (each enabled site gets this shape, with its own adapter)
  ├─ MAIN world  (document_start)
- │    chatgpt-network.js   endpoints + structural stream parser (pure)
+ │    <site>-network.js    endpoints + structural stream parser (pure)
  │    sse.js               SSE framing (pure)
  │    main-world.js        wraps fetch → emits signals via window.postMessage
  │
  ├─ ISOLATED world (document_start)
- │    chatgpt-page.js      site name + stop-button selector (a file can't be listed in both worlds: Chrome injects it only once)
+ │    <site>-page.js       site name + hosts + stop-button selector (a file can't be listed in both worlds: Chrome injects it only once)
  │    verify.js            fetch-vs-DOM cross-verification (pure)
  │    reconcile.js         closed-tab recovery: pending → recovered (pure)
  │    tracker.js           per-tab state machine: signals + DOM → records (pure)
  │    total.js + overlay.js live counter pill (shadow DOM, pointer-events: none)
  │    content.js           wiring: message listener, DOM observer, storage writes, counter
  │
- ├─ service worker        background.js: re-injects scripts on install/update; marks a
- │                         closed tab’s records pending; answers "which tab am I?"
+ ├─ service worker        background.js: re-injects the scripts that match each tab on
+ │                         install/update; marks a closed tab’s records pending; answers
+ │                         "which tab am I?"  (manifest-match.js: which entries fit a tab)
  └─ popup                 total.js (pure summary/format) + popup.html/js: reads records, shows total
 ```
 
@@ -89,10 +90,11 @@ Content scripts can write `chrome.storage.local` directly, and the popup can rea
 
 **`sse.js`**: `createSseParser(onEvent)` returns `push(textChunk)`. It splits on blank lines, normalises `\r\n`, and emits `{event, data}`. Pure; no site knowledge.
 
-**`chatgpt-network.js` + `chatgpt-page.js`**: together they build one data object plus one pure function, each world loading only its half:
+**`<site>-network.js` + `<site>-page.js`**: together they build one data object plus one pure function, each world loading only its half:
 ```js
 {
   site: 'chatgpt',
+  hosts: ['chatgpt.com'],           // page-side: the domains this adapter may run on
   streamUrl: /\/backend-(api|anon)\/f\/conversation$/,
   stopUrl: /\/backend-(api|anon)\/stop_conversation$/,
   conversationUrl: /\/backend-(api|anon)\/conversations\/[0-9a-f-]{36}$/,
@@ -102,10 +104,11 @@ Content scripts can write `chrome.storage.local` directly, and the popup can rea
   sendIds(body) → {conversationId, messageId}   // ids only, never the prompt
 }
 ```
-(`conversationUrl` is network-side, the other two page-side; each world loads only its half.)
+(`hosts`, `site` and `stopButton` are page-side, the rest network-side. Each world loads
+only its half, into the single `ns.site` slot — see §11.)
 `parseEvent` returns only structural signals: `{kind: 'done'}`, `{kind: 'message', role, contentType, status, createTime, turnExchangeId?, requestId?, messageId?}`, `{kind: 'finished'}` (a patch setting `/message/status`). It never returns strings from `content`/`parts`/`text`, and never returns `v` values other than those listed.
 
-**`main-world.js`**: wraps `window.fetch` once (guarded by a `Symbol` flag, so re-injection doesn't double-wrap). For requests matching `streamUrl`: assigns `localId = crypto.randomUUID()`, records `start = Date.now()`, posts `start`, then reads a `clone()` of the body through `sse.js` → `parseEvent`, and posts `firstByte`, `message` (the structural message signal, as messages appear), `finished` and `end {t, lastChunk, outcome}` (`t` = arrival of `[DONE]`, or stream close if there was none). For `stopUrl`: posts `stop {t}`, which applies to the most recent still-open stream in the same tab. On a read error: `outcome: 'error'`, `end = lastChunk`. Everything crosses the world boundary as `{__aih: 1, type, localId, ...}` via `window.postMessage`. No text, ever.
+**`main-world.js`**: wraps `window.fetch` once (guarded by a `Symbol` flag, so re-injection doesn't double-wrap), and reads `ns.site` at call time so a re-injected adapter takes effect. For requests matching `streamUrl`: assigns `localId = crypto.randomUUID()`, records `start = Date.now()`, posts `start`, then reads a `clone()` of the body through `sse.js` → `parseEvent`, and posts `firstByte`, `message` (the structural message signal, as messages appear), `finished` and `end {t, lastChunk, outcome}` (`t` = arrival of `[DONE]`, or stream close if there was none). For `stopUrl`: posts `stop {t}`, which applies to the most recent still-open stream in the same tab. On a read error: `outcome: 'error'`, `end = lastChunk`. Everything crosses the world boundary as `{__aih: 1, type, localId, ...}` via `window.postMessage`. No text, ever.
 
 **`verify.js`**: pure. `withinPairWindow(fetchStart, domStart)` is true when the stop button appears between 0.5 s before and 2 s after the fetch start. `classify({fetch, dom})` → `{source, confidence, flags}` using the table in §5.
 
@@ -196,9 +199,10 @@ ChatGPT keeps generating after the tab is gone and saves the finished reply. So 
 
 ## 8. Privacy & permissions
 
-- `host_permissions`: `https://chatgpt.com/*` only. `permissions`: `storage`, `unlimitedStorage` (no install warning), `scripting`.
+- `host_permissions`: the enabled sites only (§11) — currently just `https://chatgpt.com/*`. `permissions`: `storage`, `unlimitedStorage` (no install warning), `scripting`.
 - Stream text necessarily passes through the decoder in memory. Only the structural signals listed in §4 leave `parseEvent`. Nothing leaves the device.
 - `window.postMessage` is visible to the page, so the page could forge signals. That's acceptable for local-only v1. It becomes the anti-cheat problem (handoff §9.6) if a server is added.
+- Adding a site is a privacy decision as much as a technical one: the install warning's site list grows with every adapter. A stub that isn't in the manifest adds nothing to it.
 
 ## 9. Testing
 
@@ -206,6 +210,106 @@ ChatGPT keeps generating after the tab is gone and saves the finished reply. So 
 - **Manual E2E on chatgpt.com** (a checklist in the plan): rerun spike tests A–D; the popup total must match the sum of the records; two tabs thinking must gain 2 s per second with `×2`; a close mid-reply must stop the pill instantly, then jump when the chat is reopened.
 
 ## 10. Out of scope
-Other sites · share card · server/sync · WebSocket capture · anti-cheat · background tasks the page never re-fetches (deep research, long "background mode" replies) · reconciling a turn that was never watched at all (a chat opened cold contributes nothing, since nothing was watched) · collapsing overlapping records into wall-clock time (that stays a product decision: durations are summed, §2).
+Share card · server/sync · WebSocket capture · anti-cheat · background tasks the page never re-fetches (deep research, long "background mode" replies) · reconciling a turn that was never watched at all (a chat opened cold contributes nothing, since nothing was watched) · collapsing overlapping records into wall-clock time (that stays a product decision: durations are summed, §2) · local models (Ollama, LM Studio, Open WebUI) — a different transport with no page chrome to observe, so they need their own design, not an adapter.
 
-**Moved out of "out of scope" on 2026-10-01:** background-agent reconstruction, now ⚑4, limited to finishing a record whose own tab was closed (§6b).
+**Moved out of "out of scope" on 2026-10-01:** background-agent reconstruction, now ⚑4, limited to finishing a record whose own tab was closed (§6b). **Other sites**, now §11.
+
+## 11. Multiple sites (added 2026-10-01)
+
+### The decision
+
+Scaffold the adapter shape for every major chat LLM; enable a site only once its wire
+behaviour has been observed in DevTools. Full parity is the target — a new site gets
+live counting, Stop-now, the pill and closed-tab recovery, not a reduced version.
+
+The pill and the popup still show **one number**: records from every site are summed by
+duration regardless of which site produced them (`summarize` and `liveTotal` never read
+`site`). There is no per-site breakdown, because a breakdown invites comparing a
+precisely-measured site against a roughly-measured one as if they were equal.
+
+### The adapter contract
+
+A site is two files, because a file listed in two manifest entries loads in only one of
+them (§4, and `test/manifest.test.js`):
+
+| file | world | provides |
+|---|---|---|
+| `src/<site>-network.js` | MAIN | `streamUrl`, `stopUrl`, `conversationUrl`, `parseEvent`, `sendIds`, `parseConversation` |
+| `src/<site>-page.js` | ISOLATED | `hosts`, `site`, `stopButton` |
+
+Both halves write into a **single slot**, `ns.site`, by `Object.assign`, so each world
+keeps its own half. Not a keyed registry: the manifest decides which adapter file loads on
+which domain, so exactly one adapter is ever live per page and a hostname lookup would be
+dead code. `content.js` checks `ns.site.hosts` against `location.hostname` before doing
+anything, so a mis-declared `matches` produces silence rather than wrong numbers.
+
+Everything else — `sse.js`, `main-world.js`, `tracker.js`, `verify.js`, `reconcile.js`,
+`total.js`, `overlay.js`, `content.js`, `background.js` — is site-agnostic and is shared
+verbatim by every site.
+
+### What "full parity" can and cannot mean
+
+Full parity is structural: the adapter has every slot, so no new machinery is needed per
+site. It is not guaranteed per site, because a slot may have no honest value:
+
+| Slot | If a site can't supply it honestly |
+|---|---|
+| `streamUrl`, `parseEvent` | No counting at all. The site stays disabled |
+| `stopButton` | The DOM cross-check is lost; records become `fetch-only` with a `dom-missing` flag (§5). Still counted |
+| `stopUrl` | Stop isn't seen at the press, so `end` falls back to the stream's own end (on ChatGPT that is ~5 s late, §3). A small, flagged overcount |
+| `conversationUrl`, `parseConversation` | **No closed-tab recovery on that site.** Its closed-tab records stay `pending` and are reported as unknown (§6b, last row). Never guessed |
+
+A site with no conversation-load endpoint is therefore *supported but lossy*, and that loss
+is written into the spec for the site rather than left as hidden behaviour.
+
+### ⚑8 The framing risk (the one real design unknown)
+
+Every timing path here assumes the reply arrives as an HTTP response body readable chunk by
+chunk, framed as SSE. ChatGPT is confirmed (`data:` lines, terminated by `[DONE]`). Other
+sites may not be — Gemini's web app in particular is known to use a different RPC envelope
+rather than a plain SSE stream. If a probe shows a non-SSE stream, `main-world.js` needs one
+new seam: a frame splitter an adapter may override, defaulting to `createSseParser`. That
+adapter cannot be written until the seam exists.
+
+Deliberately **not** built speculatively: it is one function, and the probe says in one
+paste whether it is needed. If every probed site is SSE, the seam is never written.
+
+### What must be verified per site before it is enabled
+
+Six facts, all from one DevTools paste (`spike/multisite-probe.js`):
+
+1. **Send request** — URL and method.
+2. **Stream request** — URL, and a `content-type` containing `text/event-stream`.
+3. **Frame format** — SSE `data:` lines or something else, plus the marker that means "the
+   reply is over" (`[DONE]`, a JSON field, or the socket simply closing).
+4. **Stop request** — does pressing Stop issue its own request, and does the stream survive it?
+5. **Stop button** — a CSS selector that matches, and is stable enough to trust.
+6. **Conversation load** — does opening a chat refetch it over HTTP as JSON, and what are
+   the top-level key names and the per-turn timestamp field names?
+
+6 is what closed-tab recovery depends on; 2 and 3 are what live counting depends on.
+
+### Site status
+
+| Site | Adapter | Live counting | Closed-tab recovery | In manifest |
+|---|---|---|---|---|
+| chatgpt.com | written, verified 2026-09-30 | yes | yes (⚑7a–c still unconfirmed) | yes |
+| gemini.google.com | stub | not yet | not yet | no |
+| claude.ai | stub | not yet | not yet | no |
+| perplexity.ai | stub | not yet | not yet | no |
+| copilot.microsoft.com | stub | not yet | not yet | no |
+| grok.com | stub | not yet | not yet | no |
+| you.com | stub | not yet | not yet | no |
+| chat.deepseek.com | stub | not yet | not yet | no |
+
+**The manifest is the switch.** A stub is written but not listed, so it cannot run, cannot
+half-count, and cannot quietly widen the permission list. A site moves into the manifest in
+the same commit that fills in its verified values and flips `verified: true`.
+
+### Permissions
+
+`host_permissions` and the `matches` lists grow together, so the install warning reads
+"read and change your data on N sites" and that list is exactly the set of sites being
+measured. There is deliberately no wildcard: a broad grant would let an adapter file run
+somewhere it was never probed.
+

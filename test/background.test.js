@@ -39,12 +39,16 @@ function stubChrome(over = {}) {
   return { chrome, calls };
 }
 
-const reconcileSrc = fs.readFileSync(path.join(__dirname, '..', 'extension', 'src', 'reconcile.js'), 'utf8');
+// The worker imports these for their side effects (see the stub comment above), so the test
+// loads the real files rather than stubbing their exports.
+const SRC = (f) => fs.readFileSync(path.join(__dirname, '..', 'extension', 'src', f), 'utf8');
 
 function load(over) {
   const { chrome, calls } = stubChrome(over);
   const ctx = vm.createContext({ chrome, console });
-  vm.runInContext(reconcileSrc, ctx, { filename: 'reconcile.js' });
+  for (const f of ['reconcile.js', 'manifest-match.js']) {
+    vm.runInContext(SRC(f), ctx, { filename: f });
+  }
   vm.runInContext(src, ctx, { filename: 'background.js' });
   return { chrome, calls, ns: ctx.__aiHours };
 }
@@ -113,15 +117,50 @@ test('a message without our marker, or without a tab, is ignored', () => {
 });
 
 test('re-injection still runs only for install and update', async () => {
-  const { calls } = load({ tabs: [{ id: 1 }] });
+  const { calls } = load({ tabs: [{ id: 1, url: 'https://chatgpt.com/c/x' }] });
   await calls.onInstalled({ reason: 'install' });
-  assert.equal(calls.injected.length, 2, 'one per content_scripts entry');
+  assert.equal(calls.injected.length, 2, 'one per entry matching this tab');
   await calls.onInstalled({ reason: 'chrome_update' });
   assert.equal(calls.injected.length, 2, 'a browser update re-injects nothing');
 });
 
+// The bug this guards: with more than one site, injecting every entry would hand a Claude
+// tab the ChatGPT stop-button selector, so its replies would be tracked against a selector
+// that never matches and flagged dom-missing forever.
+test('a tab is only given the entries for its own site', async () => {
+  const manifest = {
+    content_scripts: [
+      { matches: ['https://chatgpt.com/*'], js: ['gpt-main.js'] },
+      { matches: ['https://chatgpt.com/*'], js: ['gpt-page.js'] },
+      { matches: ['https://claude.ai/*'], js: ['claude-main.js'] },
+      { matches: ['https://claude.ai/*'], js: ['claude-page.js'] },
+    ],
+  };
+  const { calls } = load({
+    runtime: { getManifest: () => manifest },
+    tabs: [{ id: 1, url: 'https://claude.ai/chat/1' }, { id: 2, url: 'https://chatgpt.com/c/1' }],
+  });
+  await calls.onInstalled({ reason: 'update' });
+  const for1 = calls.injected.filter((i) => i.target.tabId === 1).map((i) => i.files[0]);
+  const for2 = calls.injected.filter((i) => i.target.tabId === 2).map((i) => i.files[0]);
+  assert.deepEqual(for1.sort(), ['claude-main.js', 'claude-page.js']);
+  assert.deepEqual(for2.sort(), ['gpt-main.js', 'gpt-page.js']);
+});
+
+// Chrome withholds tab.url without a matching host permission. Guessing there would inject
+// the wrong adapter, so every entry is offered instead and content.js refuses on its own
+// hosts check.
+test('a tab with no readable url is offered every entry, and the page decides', async () => {
+  const { calls } = load({ tabs: [{ id: 1 }] });
+  await calls.onInstalled({ reason: 'update' });
+  assert.equal(calls.injected.length, 2, 'both entries tried; the hosts check on the page filters');
+});
+
 test('a tab that cannot be injected does not stop the others', async () => {
-  const { calls } = load({ tabs: [{ id: 1 }, { id: 2 }], failOn: 'a.js' });
+  const { calls } = load({
+    tabs: [{ id: 1, url: 'https://chatgpt.com/c/1' }, { id: 2, url: 'https://chatgpt.com/c/2' }],
+    failOn: 'a.js',
+  });
   await calls.onInstalled({ reason: 'update' });
   assert.equal(calls.injected.filter((i) => i.files[0] === 'b.js').length, 2);
 });

@@ -3,7 +3,14 @@
 (function () {
   const ns = globalThis.__aiHours;
   ns.stopContent?.(); // an older copy may still be running after an extension update
-  const site = ns.chatgpt;
+  const site = ns.site;
+
+  // The manifest decides which adapter loads here, so this is belt-and-braces: if the
+  // adapter and the domain ever disagree, do nothing rather than misattribute a reply.
+  // Silence is recoverable; a wrong number is not.
+  if (!site?.hosts?.some((h) => location.hostname === h || location.hostname.endsWith('.' + h))) {
+    return;
+  }
 
   let tabId = null;
   const records = new Map(); // storage key -> record

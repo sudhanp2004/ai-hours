@@ -12,7 +12,7 @@
   const post = (type, payload) => window.postMessage({ __aih: 1, type, ...payload }, location.origin);
   // How often a streaming reply says "still here". Other tabs count it live from this, and
   // each one becomes a storage write there, so it is throttled well above the chunk rate.
-  const aliveEvery = () => ns().chatgpt.aliveEveryMs ?? 2000;
+  const aliveEvery = () => ns().site?.aliveEveryMs ?? 2000;
 
   function pathOf(input) {
     try {
@@ -24,16 +24,17 @@
   }
 
   async function wrappedFetch(input, init) {
-    const site = ns().chatgpt;
+    const site = ns().site;
+    if (!site) return origFetch.apply(window, arguments);
     const path = pathOf(input);
-    if (site.stopUrl.test(path)) post('stop', { t: Date.now() });
+    if (site.stopUrl?.test(path)) post('stop', { t: Date.now() });
     if (site.conversationUrl && site.conversationUrl.test(path)) return readConversation(path, arguments);
-    if (!site.streamUrl.test(path)) return origFetch.apply(window, arguments);
+    if (!site.streamUrl?.test(path)) return origFetch.apply(window, arguments);
 
     const localId = crypto.randomUUID();
     // The ids of the message and conversation we're about to create. Reading them now is
     // what lets a tab closed a second later still be matched to its finished reply.
-    post('start', { localId, t: Date.now(), sent: ns().chatgpt.sendIds(init?.body) });
+    post('start', { localId, t: Date.now(), sent: ns().site.sendIds?.(init?.body) });
     let res;
     try {
       res = await origFetch.apply(window, arguments);
@@ -49,7 +50,7 @@
   window.fetch = wrappedFetch;
 
   async function readStream(localId, res) {
-    const { chatgpt: site, createSseParser } = ns();
+    const { site, createSseParser } = ns();
     let lastChunk = null;
     let doneAt = null;
     const parser = createSseParser((ev) => {
@@ -92,7 +93,7 @@
       res.clone()
         .json()
         .then((json) => {
-          const turns = ns().chatgpt.parseConversation(json);
+          const turns = ns().site.parseConversation(json);
           if (turns.length) post('conversation', { conversationId: path.split('/').pop(), turns });
         })
         .catch(() => {}); // a shape we don't understand is simply no recovery

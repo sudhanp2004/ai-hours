@@ -8,7 +8,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.join(__dirname, '..', 'extension');
-const FILES = ['chatgpt-page', 'verify', 'reconcile', 'tracker', 'total', 'overlay'];
+const FILES = ['sites/chatgpt-page', 'verify', 'reconcile', 'tracker', 'total', 'overlay'];
 
 const T0 = 1790764800000;
 const rec = (over) => ({
@@ -38,7 +38,10 @@ function fakeDocument(selector) {
   };
 }
 
-function setup({ stored = {}, tabId = 7 } = {}) {
+// The adapter is normally loaded from sites/, which is where the manifest points. A test can
+// name different files to simulate a page whose adapter is for another site (see the hosts
+// guard below), so the load list is a parameter rather than a constant.
+function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname } = {}) {
   const store = { ...stored };
   const sent = [];
   const listeners = { message: null, storage: null };
@@ -58,7 +61,9 @@ function setup({ stored = {}, tabId = 7 } = {}) {
   };
   ctx.removeEventListener = () => {};
   ctx.document = fakeDocument();
-  ctx.location = new URL('https://chatgpt.com/c/abc');
+  // A plain object, not a URL: URL.hostname is read-only, and a test needs to stand on a
+  // different domain to check the hosts guard.
+  ctx.location = { href: 'https://chatgpt.com/c/abc', origin: 'https://chatgpt.com', hostname: hostname ?? 'chatgpt.com' };
   ctx.chrome = {
     runtime: { id: 'ext', lastError: null, sendMessage: (m, cb) => cb(tabId === null ? undefined : { tabId }) },
     storage: {
@@ -82,7 +87,7 @@ function setup({ stored = {}, tabId = 7 } = {}) {
   `,
     context,
   );
-  for (const f of FILES) vm.runInContext(fs.readFileSync(path.join(root, 'src', `${f}.js`), 'utf8'), context, { filename: f });
+  for (const f of siteFiles) vm.runInContext(fs.readFileSync(path.join(root, 'src', `${f}.js`), 'utf8'), context, { filename: f });
   vm.runInContext(fs.readFileSync(path.join(root, 'src', 'content.js'), 'utf8'), context, { filename: 'content.js' });
   // runInContext takes no sandbox argument, so the payload goes on the context object.
   const send = (context, data) => {
@@ -106,6 +111,30 @@ test('content.js loads and registers its listeners', async () => {
   const { context } = setup();
   await settle();
   assert.equal(inContext(context, 'typeof __aiHours.stopContent'), 'function');
+});
+
+// The hosts guard: if the manifest ever hands a tab an adapter for a different site, that
+// adapter's stop-button selector would match nothing and every record would be flagged
+// dom-missing. Doing nothing is the recoverable failure; wrong numbers are not.
+test('a page whose domain the adapter does not claim records nothing at all', async () => {
+  // chatgpt's adapter on a Claude page: the manifest would be wrong, so refuse.
+  const { context, store } = setup({ hostname: 'claude.ai' });
+  await settle();
+  assert.equal(inContext(context, 'typeof __onMessage'), 'undefined', 'no window message listener is registered');
+  assert.equal(store['rec:a'], undefined, 'nothing is written');
+});
+
+test('the hosts guard matches a real subdomain, never a bare prefix', async () => {
+  // "evilchatgpt.com" merely *contains* the host; it must not be accepted, or a typo'd
+  // manifest pattern would let us run on a domain the user never granted.
+  const wrong = setup({ hostname: 'evilchatgpt.com' });
+  await settle();
+  assert.equal(inContext(wrong.context, 'typeof __onMessage'), 'undefined', 'a bare prefix match is refused');
+
+  // "www.chatgpt.com" is a true subdomain and is legitimately covered by the host.
+  const right = setup({ hostname: 'www.chatgpt.com' });
+  await settle();
+  assert.equal(inContext(right.context, 'typeof __onMessage'), 'function', 'a real subdomain is accepted');
 });
 
 test('a record written by the tracker carries this tab id and the send ids', async () => {

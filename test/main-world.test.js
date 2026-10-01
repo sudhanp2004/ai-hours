@@ -19,7 +19,7 @@ const sse = (chunks, gapMs = 5) => () => new Response(new ReadableStream({
 }), { headers: { 'content-type': 'text/event-stream; charset=utf-8' } });
 
 function load() {
-  for (const f of ['sse', 'chatgpt-network', 'main-world']) {
+  for (const f of ['sse', 'sites/chatgpt-network', 'main-world']) {
     const p = require.resolve(`../extension/src/${f}.js`);
     delete require.cache[p];
     require(p);
@@ -109,7 +109,7 @@ test('other requests (incl. Request objects and other origins) pass through sile
 // ---- Task 5: the sign of life, and reading a loaded conversation
 // The real throttle is 2 s; the fake stream sends in milliseconds, so tests shrink it.
 function withAliveEvery(ms, fn) {
-  const site = globalThis.__aiHours.chatgpt;
+  const site = globalThis.__aiHours.site;
   const prev = site.aliveEveryMs;
   site.aliveEveryMs = ms;
   return Promise.resolve(fn()).finally(() => (site.aliveEveryMs = prev));

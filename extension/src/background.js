@@ -5,13 +5,17 @@
 // reconcile.js is plain JS with no exports, so this import is for its side effect only:
 // the same file is also loaded as a classic script by the content script.
 import './reconcile.js';
+import './manifest-match.js';
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason !== 'install' && reason !== 'update') return;
   const { content_scripts: scripts } = chrome.runtime.getManifest();
   const tabs = await chrome.tabs.query({ url: scripts.flatMap((s) => s.matches) });
   for (const tab of tabs) {
-    for (const s of scripts) {
+    // Only this tab's own site (spec §11). Injecting every entry would give a Claude tab
+    // the ChatGPT stop-button selector, so its replies would be tracked against the wrong
+    // selector and flagged as dom-missing forever.
+    for (const s of globalThis.__aiHours.scriptsFor(scripts, tab.url)) {
       try {
         await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: s.world || 'ISOLATED', files: s.js });
       } catch (e) {

@@ -10,13 +10,21 @@
   "content_scripts": [
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["src/sse.js", "src/chatgpt-network.js", "src/main-world.js"],
+      "js": ["src/sse.js", "src/sites/chatgpt-network.js", "src/main-world.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["src/chatgpt-page.js", "src/verify.js", "src/reconcile.js", "src/tracker.js", "src/total.js", "src/overlay.js", "src/content.js"],
+      "js": [
+        "src/sites/chatgpt-page.js",
+        "src/verify.js",
+        "src/reconcile.js",
+        "src/tracker.js",
+        "src/total.js",
+        "src/overlay.js",
+        "src/content.js"
+      ],
       "run_at": "document_start"
     }
   ]

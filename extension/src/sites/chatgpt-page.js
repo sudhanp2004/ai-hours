@@ -3,7 +3,10 @@
 (function (root) {
   const ns = (root.__aiHours = root.__aiHours || {});
 
-  ns.chatgpt = Object.assign(ns.chatgpt || {}, {
+  ns.site = Object.assign(ns.site || {}, {
+    // Verified in DevTools on 2026-09-30 (see spike/chatgpt-probe.js).
+    verified: true,
+    hosts: ['chatgpt.com'],
     site: 'chatgpt',
     stopButton: 'button[data-testid="stop-button"]',
   });

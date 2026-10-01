@@ -106,7 +106,10 @@
     return turns;
   }
 
-  ns.chatgpt = Object.assign(ns.chatgpt || {}, {
+  ns.site = Object.assign(ns.site || {}, {
+    // Endpoints verified in DevTools on 2026-09-30 (see spike/chatgpt-probe.js). ⚑7a–c in
+    // the spec are still unconfirmed, so recovery here is unit-tested but unproven.
+    verified: true,
     streamUrl: /\/backend-(api|anon)\/f\/conversation$/,
     stopUrl: /\/backend-(api|anon)\/stop_conversation$/,
     conversationUrl: /\/backend-(api|anon)\/conversations\/[0-9a-f-]{36}$/,
