@@ -56,9 +56,24 @@ assumptions until the first run on the real site:
 | ⚑7c | A loaded conversation is fetched as `GET /backend-api/conversations/{id}` (plural) with `application/json` | no `conversation` signal, so a closed-tab record stays `pending` → counted as unknown. Nothing is invented | check the network tab; ChatGPT may load a chat from its own in-memory state instead of refetching |
 
 `spike/conversation-probe.js` is a throwaway DevTools snippet that prints the key names of
-both payloads (and nothing else) so ⚑7a–c can be confirmed in one paste. Until it is run,
-the honest description of this feature is: *recovery is implemented and unit-tested against
-the documented shape, but unproven against the live site.*
+both payloads (and nothing else) so ⚑7a–c can be confirmed in one paste.
+
+**Probe results (2026-10-03, one new chat + one chat load):**
+- ⚑7b **confirmed:** the send body is passed as `init.body`, a string.
+- ⚑7a **confirmed for matching:** `messages[]`'s last entry has `author.role === 'user'` and an
+  `id` (keys: `id, author, create_time, content, metadata`). `conversation_id` is **absent** for
+  a new chat (none exists yet); matching never used it, only the message id. Not yet observed:
+  that this id equals the user message's `id` in the later conversation load. If it does not,
+  matching falls back to send time (±2 s), which the v1 spike validated.
+- ⚑7c **confirmed:** `GET /backend-api/conversations/{id}`, `application/json`, with `messages[]`
+  carrying `metadata.turn_exchange_id`, `create_time`, `update_time`, `status`, and
+  `finish_details.type: 'stop'` on the turn's final reply.
+- **New:** returning to a chat already opened in the same page is served from ChatGPT's memory,
+  with no refetch. Recovery after a closed tab is unaffected (reopening is a fresh page load),
+  but a chat revisited within one page session produces no `conversation` signal.
+
+What remains is one end-to-end run: close a tab mid-reply, reopen the chat, and check the
+record becomes `recovered` (it also proves the send id ↔ loaded id equality).
 
 ## 4. Architecture
 
