@@ -1,3 +1,6 @@
 node_modules/
 *.zip
 .superpowers/
+
+# Private session transcripts
+2026-10-01-040357-im-thinking-of-making-an-browser-extension-that.txt

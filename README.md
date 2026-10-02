@@ -57,3 +57,8 @@ No build step: the `extension` folder is loaded as is.
 ```sh
 npm test   # Node's built-in test runner, no dependencies
 ```
+
+## License
+
+No license: all rights reserved. You are welcome to install and use the extension, and to read
+the code, but not to copy, modify or redistribute it.
