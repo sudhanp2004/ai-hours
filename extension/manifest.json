@@ -1,23 +1,71 @@
 {
   "manifest_version": 3,
   "name": "AI Hours",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Counts how long AI has worked for you. Records when AI works, never what was said.",
-  "permissions": ["storage", "unlimitedStorage", "scripting"],
-  "host_permissions": ["https://chatgpt.com/*"],
-  "background": { "service_worker": "src/background.js", "type": "module" },
-  "action": { "default_popup": "popup/popup.html", "default_title": "AI Hours" },
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://www.perplexity.ai/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "AI Hours"
+  },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*"],
-      "js": ["src/sse.js", "src/sites/chatgpt-network.js", "src/main-world.js"],
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "src/sse.js",
+        "src/sites/chatgpt-network.js",
+        "src/main-world.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["https://chatgpt.com/*"],
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
       "js": [
         "src/sites/chatgpt-page.js",
+        "src/verify.js",
+        "src/reconcile.js",
+        "src/tracker.js",
+        "src/total.js",
+        "src/overlay.js",
+        "src/content.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://www.perplexity.ai/*"
+      ],
+      "js": [
+        "src/sse.js",
+        "src/sites/perplexity-network.js",
+        "src/main-world.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.perplexity.ai/*"
+      ],
+      "js": [
+        "src/sites/perplexity-page.js",
         "src/verify.js",
         "src/reconcile.js",
         "src/tracker.js",

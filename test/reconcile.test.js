@@ -71,6 +71,15 @@ test('no server span at all recovers only what was watched', () => {
   assert.equal(r.recovered.durationMs, 5000);
 });
 
+// Perplexity's server span runs from the send, so the watched part is already inside it.
+// Adding the two would count those seconds twice; the larger of the two is the honest one.
+test('a server span that starts at the send overlaps the watched time, so it is not added', () => {
+  const r = recover(watched(), turn({ startSec: sec(T0), endSec: sec(T0 + 24000), startIsSend: true }), T0 + 60000);
+  assert.equal(r.recovered.durationMs, 24000);
+  const short = recover(watched(), turn({ startSec: sec(T0), endSec: sec(T0 + 2000), startIsSend: true }), T0 + 60000);
+  assert.equal(short.recovered.durationMs, 5000, 'the watched time is a floor: clock drift cannot shrink it');
+});
+
 test('the observed span stops at the sign of life, never at the reopen', () => {
   // Tab closed at 5 s, chat reopened 10 minutes later. The wait is not AI work.
   const r = recover(watched(), turn(), T0 + 600000);

@@ -39,7 +39,10 @@
     const observed = Math.max(0, (rec.lastSeen ?? rec.firstByte ?? rec.start) - rec.start);
     const serverMs =
       t.startSec != null && t.endSec != null ? Math.max(0, (t.endSec - t.startSec) * 1000) : 0;
-    const dur = observed + serverMs;
+    // A span that starts at the send (Perplexity) already contains the watched time, so the
+    // two overlap and the larger one is the duration. Otherwise (ChatGPT) the server span
+    // starts after the watched part, and the two add.
+    const dur = t.startIsSend ? Math.max(observed, serverMs) : observed + serverMs;
     return {
       ...rec,
       outcome: 'recovered',

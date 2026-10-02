@@ -1,12 +1,13 @@
-// perplexity page config (ISOLATED world). STUB — not yet verified, so not in the manifest.
-// Fill in from spike/site-probe.js, then flip verified to true and add this site to
-// manifest.json (both halves, one entry each) in the same commit.
+// Perplexity page config (ISOLATED world). Selector verified in DevTools on 2026-10-03.
+// The network half lives in perplexity-network.js.
 (function (root) {
   const ns = (root.__aiHours = root.__aiHours || {});
   ns.site = Object.assign(ns.site || {}, {
-    verified: false,          // flip to true only after the probe confirms the selector
+    verified: true,
     hosts: ['perplexity.ai'],
     site: 'perplexity',
-    stopButton: null,         // TODO(probe fact 5): a stable selector, e.g. 'button[data-testid="…"]'
+    // The label reads "Stop response (Esc)" and has no test id, so match its prefix.
+    // English UI only: the label is localized.
+    stopButton: 'button[aria-label^="Stop response"]',
   });
 })(globalThis);

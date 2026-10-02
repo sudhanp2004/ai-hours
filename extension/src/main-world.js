@@ -79,7 +79,10 @@
       parser.end();
       post('end', { localId, t: doneAt ?? Date.now(), lastChunk, outcome: doneAt !== null ? 'completed' : 'closed' });
     } catch {
-      post('end', { localId, t: Date.now(), lastChunk, outcome: 'error' });
+      // Perplexity aborts its own fetch right after its end event, which errors this copy
+      // too. A reply that already said it was done is complete.
+      if (doneAt !== null) post('end', { localId, t: doneAt, lastChunk, outcome: 'completed' });
+      else post('end', { localId, t: Date.now(), lastChunk, outcome: 'error' });
     }
   }
 

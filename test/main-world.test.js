@@ -72,6 +72,37 @@ test('stream closed without [DONE] → closed', async () => {
   assert.equal((await waitForEnd()).outcome, 'closed');
 });
 
+// Perplexity aborts its own fetch 1 ms after its end event, which errors our copy of the
+// body too. A reply that already said it was done is complete, not an error.
+test('a stream that errors after its done event still ends as completed', async () => {
+  posts.length = 0;
+  respond = () => new Response(new ReadableStream({
+    async start(c) {
+      for (const x of STREAM) { c.enqueue(enc.encode(x)); await new Promise((r) => setTimeout(r, 5)); }
+      await new Promise((r) => setTimeout(r, 5));
+      c.error(new DOMException('The user aborted a request.', 'AbortError'));
+    },
+  }), { headers: { 'content-type': 'text/event-stream' } });
+  const res = await fetch('/backend-api/f/conversation', { method: 'POST' });
+  await res.text().catch(() => {});
+  const end = await waitForEnd();
+  assert.equal(end.outcome, 'completed');
+  assert.ok(end.t <= Date.now());
+});
+
+test('a stream that errors before any done event still ends as error', async () => {
+  posts.length = 0;
+  respond = () => new Response(new ReadableStream({
+    async start(c) {
+      c.enqueue(enc.encode(STREAM[1]));
+      await new Promise((r) => setTimeout(r, 5));
+      c.error(new DOMException('The user aborted a request.', 'AbortError'));
+    },
+  }), { headers: { 'content-type': 'text/event-stream' } });
+  await (await fetch('/backend-api/f/conversation', { method: 'POST' })).text().catch(() => {});
+  assert.equal((await waitForEnd()).outcome, 'error');
+});
+
 test('non-stream error response passes through untouched and ends as error', async () => {
   posts.length = 0;
   respond = () => new Response('{"detail":"rate limited"}', { status: 429, headers: { 'content-type': 'application/json' } });

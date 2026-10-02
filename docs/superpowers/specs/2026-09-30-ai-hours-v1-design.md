@@ -224,7 +224,7 @@ ChatGPT keeps generating after the tab is gone and saves the finished reply. So 
 
 ## 8. Privacy & permissions
 
-- `host_permissions`: the enabled sites only (§11) — currently just `https://chatgpt.com/*`. `permissions`: `storage`, `unlimitedStorage` (no install warning), `scripting`.
+- `host_permissions`: the enabled sites only (§11) — currently `https://chatgpt.com/*` and `https://www.perplexity.ai/*`. `permissions`: `storage`, `unlimitedStorage` (no install warning), `scripting`.
 - Stream text necessarily passes through the decoder in memory. Only the structural signals listed in §4 leave `parseEvent`. Nothing leaves the device.
 - `window.postMessage` is visible to the page, so the page could forge signals. That's acceptable for local-only v1. It becomes the anti-cheat problem (handoff §9.6) if a server is added.
 - Adding a site is a privacy decision as much as a technical one: the install warning's site list grows with every adapter. A stub that isn't in the manifest adds nothing to it.
@@ -319,13 +319,143 @@ Six facts, all from one DevTools paste (`spike/multisite-probe.js`):
 | Site | Adapter | Live counting | Closed-tab recovery | In manifest |
 |---|---|---|---|---|
 | chatgpt.com | written, verified 2026-09-30 | yes | yes (⚑7a–c still unconfirmed) | yes |
-| gemini.google.com | stub | not yet | not yet | no |
-| claude.ai | stub | not yet | not yet | no |
-| perplexity.ai | stub | not yet | not yet | no |
+| gemini.google.com | stub; probed 2026-10-03 (below) | not yet | not yet | no |
+| claude.ai | stub; probed 2026-10-03 (below) | not yet | not yet | no |
+| perplexity.ai | written 2026-10-03 from the probe (below) | yes, not yet run end to end | yes (⚑9a–c unconfirmed) | yes |
 | copilot.microsoft.com | stub | not yet | not yet | no |
 | grok.com | stub | not yet | not yet | no |
 | you.com | stub | not yet | not yet | no |
 | chat.deepseek.com | stub | not yet | not yet | no |
+
+### Probe results
+
+**claude.ai (2026-10-03, two chats: one reply finished, one stopped, plus two chat loads).**
+Probes: `spike/wide-probe.js`, then `spike/connect-frames.js` (schema-free protobuf field dump).
+The six facts:
+
+1. **Send:** `POST /claudeai-rpc/anthropic.bard.api.v1alpha.ConversationService/PerformAction`,
+   `application/proto`, binary body. The body is an envelope: field 1 is a common header
+   (conversation id, plus a session id and a per-page action counter that goes up by one each
+   action); then exactly one action field. **Field 2 = send** (message uuid, parent uuid, prompt).
+   Field 15 = conversation settings (fired on chat create/open, not a send).
+2. **Stream:** `POST .../StreamTimeline`, `application/connect+proto`. **Not SSE.** It is a
+   long-lived subscription to the whole conversation's timeline, not a per-reply response.
+3. **Frames:** Connect envelopes: 1 flag byte + 4-byte big-endian length + protobuf.
+   Flag `0x01` = gzip-compressed message (`connect-content-encoding: gzip`), flag `0x02` = end
+   of stream (JSON trailer). Each message's field 1 holds one event. Event field 1 = conversation
+   state, where **`1.2.3` is a status: `2` while a reply runs, `1` when idle**. Event field 2 =
+   text deltas for a content block (`cblk_…` id). Event field 14 = acknowledgement of a
+   `PerformAction` (echoes the session id and counter). `1{6:<empty>}` every ~600 ms is a heartbeat.
+   **The reply is over when status goes 2 → 1**: 70 ms before the stop button vanished on a
+   finished reply, 80 ms before it on a stopped one. **The stream closing means nothing:** the
+   server closes it every few seconds to minutes with trailer `Stream-Close-Reason: cadence`, and
+   the page reopens it at once.
+4. **Stop:** yes, its own request, the same millisecond as the click, **to the same
+   `PerformAction` URL as a send**. The action field is **3 (empty)** instead of 2. The stream
+   survives; status goes 2 → 1 about 420 ms after the press.
+5. **Stop button:** `button[data-testid="chat-input-stop"]` (aria "Stop response"). Appeared
+   ~500 ms after the send request, gone ~500 ms after Stop was pressed.
+6. **Conversation load:** opening an old chat does **not** fetch it as JSON. The page gets a
+   gzip snapshot as the first frame of a new `StreamTimeline` (messages with role, a creation time
+   that is the reply's *start*, and a stop-reason code; no per-message end time). The legacy JSON
+   endpoint `GET /api/organizations/{org}/chat_conversations/{id}` still answers when called, with
+   `chat_messages[]` (`sender`, `created_at`, `stop_reason: end_turn | user_canceled`). On it, the
+   human message's `created_at` is the send time and the **assistant's `created_at` is the reply's
+   end** (within 40 ms of the status flip, finished and stopped alike). The page only calls it
+   after creating a chat, not when opening one.
+
+**What this means for the claude.ai adapter (decisions open, not taken):**
+- ⚑8 is needed, and is bigger than a frame splitter: `parseEvent` must decode protobuf (by field
+  number, with no schema) and gunzip flag-1 frames. Field numbers are not a public contract and
+  could change without notice.
+- `stopUrl` alone can't spot a Stop (same URL as send). The request body must be read too.
+- Closed-tab recovery can't use the passive "page loads the conversation" signal the ChatGPT
+  adapter relies on. Either the snapshot frame is parsed (start time only), or the extension
+  calls the legacy JSON endpoint itself (needs the org id; the endpoint is undocumented and may
+  be retired).
+
+**gemini.google.com (2026-10-03, signed in, Gemini Flash: one reply that came back as Gemini's own
+error, one finished, one stopped, one timed, plus chat loads).** Probe: `spike/wide-probe.js`.
+
+1. **Send = stream:** one `XMLHttpRequest` (not `fetch`), `POST
+   /_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate`, one per reply.
+2. **Stream:** read by XHR `progress` events (10–46 per reply). Not SSE. ⚑8's hook must also wrap
+   XHR, since `main-world.js` only wraps `fetch` today.
+3. **Frames:** Google's batchexecute stream: a `)]}'` prefix, then repeated `<length>\n<JSON
+   array>` chunks; reply chunks are `[["wrb.fr", null, "<JSON as a string>"]]` (double-encoded),
+   and the response ends with a `[["di",…],["af.httprm",…]]` trailer. **The XHR ending is the
+   reply's end** (finished reply: 26–58 ms before the stop button vanished).
+4. **Stop:** its own request, the same millisecond as the click: `POST
+   /_/BardChatUi/data/batchexecute?rpcids=NkpXw` (that rpc id appeared only on Stop, across ~25
+   batchexecute calls). The stream survives it: the StreamGenerate XHR ended normally (status 200)
+   ~610 ms after the press; the stop button was gone ~310 ms after the press, *before* the stream.
+5. **Stop button:** `button[aria-label="Stop response"]` (Angular Material icon button, no test
+   id; the aria label is localized, so it only holds for English UI). Appeared ~100 ms after the
+   send XHR.
+6. **Conversation load:** `POST /_/BardChatUi/data/batchexecute?rpcids=hNvQHb`, same chunked
+   format, fired on a fresh page load and on opening a chat not already in memory (a chat
+   revisited in the same page is served from memory, as on ChatGPT). Per turn: conversation id
+   `c_…`, response id `r_…`, candidate ids `rc_…`, and **a single `[seconds, nanos]` timestamp**.
+   That timestamp tracks the **send** (constant offset from send within ±0.2 s across three turns
+   whose replies ran 3.5–11 s; against reply end it drifts by 7 s). One turn timed on the client
+   clock put it 5.0 s after the send — but the Perplexity probe the same day showed this machine's
+   clock running ~4.8 s behind server time, so it is most likely **the send time on the server
+   clock**. **No end time and no duration** → closed-tab recovery on
+   Gemini has no honest end to use: such records stay `pending` → unknown (§11 slot table).
+
+**What this means for the Gemini adapter (decisions open):** live counting is straightforward
+once the hook wraps XHR (⚑8: XHR seam + a batchexecute chunk splitter); Stop is a URL match on
+`rpcids=NkpXw`; closed-tab recovery is not available from the conversation load.
+
+**perplexity.ai (2026-10-03, signed in, free plan: one thread, three turns — two finished, one
+stopped — plus a thread load).** Probe: `spike/wide-probe.js` plus an SSE event logger.
+
+1. **Send = stream:** `fetch`, `POST /rest/sse/perplexity_ask`, one per turn (a follow-up is a
+   new request on the same thread).
+2. **Stream:** `content-type: text/event-stream; charset=utf-8`. **SSE**, so the existing parser
+   fits; no ⚑8 seam needed.
+3. **Frames:** `event: message` with a JSON `data:` holding the whole growing answer (`status:
+   "PENDING"`, `text_completed`, `final_sse_message`, `message_mode: "STREAMING"`, uuids).
+   **The reply is over at `event: end_of_stream`**, which follows one last `message` with
+   `status: "COMPLETED"`, `final_sse_message: true`, `message_mode: "FULL"`. The page then
+   **aborts the fetch itself** (1 ms later), so the response body never closes cleanly: a reader
+   sees `AbortError`, not `done`. The adapter must end on `end_of_stream`, never on stream close,
+   and must not treat that abort as a failure. The stop button vanished ~105 ms after
+   `end_of_stream`.
+4. **Stop:** its own request, 1 ms after the click: `POST /rest/sse/perplexity_terminate`, JSON
+   body `{entry_uuid, context_uuid, model_preference, terminate_requested_at_ms}`. The stream
+   survives and finishes the normal way (`COMPLETED` + `end_of_stream`) ~520 ms after the press;
+   a stopped turn is still `status: "COMPLETED"` with no stop flag seen.
+5. **Stop button:** `button[aria-label="Stop response (Esc)"]` (no test id; the label is
+   localized — match the prefix `Stop response`). Appeared ~1.3 s after the send.
+6. **Conversation load:** `GET /rest/thread/{slug}` (the slug is the `/search/{slug}` path
+   segment), `application/json`, fetched on page load. Top level: `entries[]`, `status`,
+   `thread_metadata`, cursors. Per entry: `status`, `entry_created_datetime`,
+   `entry_updated_datetime` (ISO, server clock), uuids. **`entry_updated − entry_created` matched
+   the reply's length** within +440, +230 and −10 ms on the three turns (for the stopped one,
+   measured to the Stop press). Both are on the server clock, so the client/server skew cancels
+   — the same approach as ChatGPT's `serverEnd − serverStart`.
+
+**What this means for the Perplexity adapter:** the closest fit to the ChatGPT design of any site
+so far: SSE, a dedicated stop URL, and a JSON conversation load with a usable duration. The one
+new behaviour is "end on an event, ignore the page's own abort".
+
+**Enabled 2026-10-03 (user decision), with these built but not yet seen on the live site:**
+
+| ⚑ | Assumption | If wrong | Fix |
+|---|---|---|---|
+| ⚑9a | The send body has `params.frontend_uuid` and `params.frontend_context_uuid` (the probe saw its shape only as "JSON") | `sent` is `{null, null}`. Recovery still matches on the stream's `frontend_uuid` once the first event arrived; a tab closed before that falls back to send time, which this machine's ~4.8 s clock skew defeats → stays unknown, never invented | one line in `sendIds` |
+| ⚑9b | The stream's `frontend_uuid` equals the thread entry's `frontend_uuid` | no id match; same fallback as above | pick the field that does match (`backend_uuid`, `uuid`) |
+| ⚑9c | The page's abort never discards our copy's last chunk (on the probe our reader saw `end_of_stream` every time) | a finished reply ends as `error` at its last chunk: a few ms short, and flagged | none needed unless seen |
+
+Shared-code changes this needed: `main-world.js` ends a stream that errors *after* its done
+event as `completed`; `reconcile.js` takes `max(watched, server span)` instead of the sum when a
+turn says `startIsSend` (Perplexity's span already includes the watched part). The pill's
+position was tuned for ChatGPT's header and is untested on Perplexity.
+
+**Clock skew seen on this machine (2026-10-03):** Perplexity's server timestamps ran a steady
+~4.8 s ahead of the client clock (created − send = 4.81–4.86 s on all three turns). Never mix a
+client-clock time with a server-clock time in one subtraction.
 
 **The manifest is the switch.** A stub is written but not listed, so it cannot run, cannot
 half-count, and cannot quietly widen the permission list. A site moves into the manifest in
