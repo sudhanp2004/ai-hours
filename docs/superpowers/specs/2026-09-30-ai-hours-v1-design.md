@@ -78,8 +78,12 @@ and recovery (which then required `pending`) never considered it. Fixed: a conve
 now finishes any unfinished record that is `pending` **or** has been silent past the 30 s live
 cutoff (`isRecoverable` in `reconcile.js`), so a quit, crash or missed close event recovers too.
 
-What remains is one end-to-end run: close a tab mid-reply, reopen the chat, and check the
-record becomes `recovered` (it also proves the send id ↔ loaded id equality).
+**End-to-end run 2 (2026-10-03), passed:** after the fix, reopening the chat recovered the
+record left by run 1: `outcome: recovered`, `matchedBy: messageId`, `finishType: stop`,
+`durationMs` 34 565 = 665 ms watched + 33 900 ms of server generation (`serverEnd − serverStart`).
+This also confirms the open half of ⚑7a: the send body's user message `id` equals that
+message's `id` in the loaded conversation. Closed-tab and browser-quit recovery are verified
+on the live site.
 
 ## 4. Architecture
 
