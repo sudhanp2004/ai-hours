@@ -72,6 +72,12 @@ both payloads (and nothing else) so ⚑7a–c can be confirmed in one paste.
   with no refetch. Recovery after a closed tab is unaffected (reopening is a fresh page load),
   but a chat revisited within one page session produces no `conversation` signal.
 
+**End-to-end run 1 (2026-10-03):** the send id was captured, but the user closed the whole
+window, which quit Chrome. Quitting sends no `tabs.onRemoved`, so the record stayed `unknown`
+and recovery (which then required `pending`) never considered it. Fixed: a conversation load
+now finishes any unfinished record that is `pending` **or** has been silent past the 30 s live
+cutoff (`isRecoverable` in `reconcile.js`), so a quit, crash or missed close event recovers too.
+
 What remains is one end-to-end run: close a tab mid-reply, reopen the chat, and check the
 record becomes `recovered` (it also proves the send id ↔ loaded id equality).
 

@@ -128,3 +128,18 @@ test('a record recovered later is never re-pending or re-recovered', () => {
   assert.deepEqual(pendingByTab([done], 7, T0 + 90000), {}, 'recovered has an end-equivalent duration');
   assert.equal(matchTurn(done, [turn()]), null);
 });
+// ---- which records a conversation load may finish
+const { isRecoverable } = globalThis.__aiHours;
+
+test('recoverable: pending, or unfinished and silent for over 30 s (a browser quit sends no close event)', () => {
+  assert.equal(isRecoverable(watched({ outcome: 'pending' }), T0 + 6000), true);
+  const quit = watched({ outcome: 'unknown', lastSeen: T0 + 5000 });
+  assert.equal(isRecoverable(quit, T0 + 5000 + 30001), true);
+  assert.equal(isRecoverable(quit, T0 + 5000 + 29000), false, 'still inside the live window: its tab may be streaming');
+  assert.equal(isRecoverable(watched({ outcome: 'unknown', lastSeen: null }), T0 + 30001), true, 'no sign of life: measured from start');
+});
+
+test('never recoverable: already finished or already recovered', () => {
+  assert.equal(isRecoverable(watched({ end: T0 + 9000, outcome: 'completed' }), T0 + 99999), false);
+  assert.equal(isRecoverable(watched({ recovered: { durationMs: 1 } }), T0 + 99999), false);
+});

@@ -6,6 +6,8 @@
 (function (root) {
   const ns = (root.__aiHours = root.__aiHours || {});
   const SEND_TIME_WINDOW_MS = 2000;
+  // Same cutoff as LIVE_STALE_MS in total.js: past it, no tab is watching the record.
+  const STALE_MS = 30 * 1000;
 
   // Which key let us pair them, so the match can be verified later.
   function matchedBy(rec, t) {
@@ -64,7 +66,16 @@
     return out;
   }
 
+  // Which records a conversation load may finish: those no tab is still measuring. A closed
+  // tab marks its records pending, but quitting Chrome sends no tabs.onRemoved, so a record
+  // that has been silent past the live cutoff is just as orphaned.
+  function isRecoverable(rec, now) {
+    if (rec.end != null || rec.recovered) return false;
+    return rec.outcome === 'pending' || now - (rec.lastSeen ?? rec.start) > STALE_MS;
+  }
+
   ns.matchTurn = matchTurn;
+  ns.isRecoverable = isRecoverable;
   ns.recover = recover;
   ns.pendingByTab = pendingByTab;
 })(globalThis);

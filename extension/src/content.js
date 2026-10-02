@@ -86,17 +86,18 @@
     tracker.onSignal(msg);
   }
 
-  // Opening a chat loads its conversation. If one of our records was left pending by a
-  // closed or reloaded tab, finish it now from the server's own timestamps (spec §6b).
+  // Opening a chat loads its conversation. If one of our records lost its tab (closed,
+  // reloaded, or the browser quit), finish it now from the server's own timestamps (spec §6b).
   function onConversation({ turns }) {
     if (!Array.isArray(turns)) return;
     const done = [];
+    const now = Date.now();
     for (const rec of records.values()) {
-      // Only records whose tab is gone. A reply still streaming in another tab is that tab's
-      // to finish, and matching it here would rewrite a record that is still being measured.
-      if (rec.outcome !== 'pending' || rec.end != null || rec.recovered) continue;
+      // Only records no tab is measuring. A reply still streaming in another tab is that
+      // tab's to finish, and matching it here would rewrite a record still being measured.
+      if (!ns.isRecoverable(rec, now)) continue;
       const turn = ns.matchTurn(rec, turns);
-      if (turn) done.push(ns.recover(rec, turn, Date.now()));
+      if (turn) done.push(ns.recover(rec, turn, now));
     }
     if (!done.length) return;
     const update = {};

@@ -284,3 +284,13 @@ test('no tab id means no orphan cleanup, and nothing is invented', async () => {
   assert.equal(store['rec:old'].outcome, 'unknown');
   assert.deepEqual(sent, []);
 });
+test('a record left unknown by a browser quit is recovered when the chat is opened again', async () => {
+  // Quitting Chrome sends no tabs.onRemoved, so the record was never marked pending.
+  const quit = { ...PENDING, id: 'q', outcome: 'unknown' }; // last sign of life 55 s ago
+  const { context, store, send } = setup({ stored: { 'rec:q': quit } });
+  await settle();
+  send(context, { type: 'conversation', turns: TURNS });
+  await settle();
+  assert.equal(store['rec:q'].outcome, 'recovered');
+  assert.equal(store['rec:q'].recovered.durationMs, 5000 + 30000);
+});
