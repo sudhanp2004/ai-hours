@@ -264,7 +264,7 @@ this change have no model and show as "Model not recorded".
 | ⚑11a | ChatGPT: stream message `metadata.model_slug` (and the same in a loaded conversation) | not yet seen on the wire; if absent, ChatGPT rows show "Model not recorded" |
 | ⚑11b | Perplexity: `display_model` on every stream event and thread entry | seen (`"turbo"` for the default); the mapping of its values to product names is unknown, so they show raw |
 | ⚑11c | claude.ai: the timeline's conversation field 6.2 (`claude-opus-5-5`) | seen in the probe |
-| ⚑11d | Gemini: none found yet | its row has no models; would need one more probe |
+| ⚑11d | Gemini: a short value such as `"3.6 Flash"` inside the StreamGenerate response's `wrb.fr` data (the request has only an opaque code in `x-goog-ext-525001261-jspb`). Read while streaming, so a stopped reply keeps it; only strings of 40 chars or fewer count, so a reply *mentioning* "2.5 Pro" is never taken for the model | seen once by the user's console probe (2026-10-03, Flash only); its exact position in the data is not yet known, so it is matched by shape, not by position |
 
 ### The adapter contract
 

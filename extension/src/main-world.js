@@ -155,15 +155,29 @@
     post('start', { localId, t: Date.now(), sent: null });
     let lastChunk = null;
     let lastAlive = 0;
+    let model = null;
+    // Looked for while the reply streams, not at the end: Stop finishes the record at the
+    // press, and a model learned after that would have nothing to attach to.
+    const findModel = () => {
+      if (model || !site.modelFromResponse) return;
+      try {
+        model = site.modelFromResponse(xhr.responseText);
+      } catch {
+        return;
+      }
+      if (model) post('message', { localId, sig: { kind: 'message', role: 'assistant', model } });
+    };
     xhr.addEventListener('progress', () => {
       const t = Date.now();
       if (lastChunk === null) post('firstByte', { localId, t }), (lastAlive = t);
       else if (t - lastAlive >= aliveEvery()) post('alive', { localId, t }), (lastAlive = t);
       lastChunk = t;
+      findModel();
     });
     // loadend fires once, after load, error, abort or timeout. Status 0 is an abort or a
     // network failure; a finished reply is a 2xx.
     xhr.addEventListener('loadend', () => {
+      findModel();
       const ok = xhr.status >= 200 && xhr.status < 300;
       post('end', { localId, t: Date.now(), lastChunk, outcome: ok ? 'completed' : 'error' });
     });

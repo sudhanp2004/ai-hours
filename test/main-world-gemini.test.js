@@ -33,6 +33,20 @@ function xhr(url, body) {
   return x;
 }
 
+// Built like the real stream: )]}' then length-prefixed lines, each [["wrb.fr",null,"<inner JSON>"]].
+const wrb = (inner) => JSON.stringify([['wrb.fr', null, JSON.stringify(inner)]]);
+const stream = (...inners) => `)]}'\n\n` + inners.map((i) => `${wrb(i).length}\n${wrb(i)}\n`).join('');
+const REPLY = `A long reply that happens to talk about 2.5 Pro and 3.0 Ultra, padded well past forty characters. ${SECRET}`;
+
+test('adapter: the model is the short standalone "3.6 Flash" value, never a mention inside the reply', () => {
+  assert.equal(site.modelFromResponse(stream([null, ['c_1', 'r_1'], [['rc_1', [REPLY]]], null, '3.6 Flash'])), '3.6 Flash');
+  assert.equal(site.modelFromResponse(stream([null, [['rc_1', [REPLY]]]])), null, 'only mentioned in the text');
+  assert.equal(site.modelFromResponse(stream([['x', 'Gemini 2.5 Pro']])), '2.5 Pro', 'a short label around it');
+  assert.equal(site.modelFromResponse(stream([['3.6 Flash-Lite']])), '3.6 Flash-Lite');
+  assert.equal(site.modelFromResponse(")]}'\n\n12\n[[\"wrb.fr\",nu"), null, 'a half-received chunk');
+  assert.equal(site.modelFromResponse(''), null);
+});
+
 test('adapter: verified URLs, the stop selector, and no recovery', () => {
   assert.equal(site.site, 'gemini');
   assert.deepEqual(site.hosts, ['gemini.google.com']);
@@ -53,16 +67,28 @@ test('the reply XHR is timed from send to loadend; the prompt never crosses', as
   await tick();
   x.responseText = `)]}'\n\n120\n[["wrb.fr",null,"${SECRET}"]]`;
   x.fire('progress');
+  x.responseText = stream([null, [['rc_1', [REPLY]]], '3.6 Flash']);
+  x.fire('progress');
   x.fire('progress');
   await tick();
   x.status = 200;
   x.fire('loadend');
-  assert.deepEqual(posts.map((p) => p.type), ['start', 'firstByte', 'end']);
+  assert.deepEqual(posts.map((p) => p.type), ['start', 'firstByte', 'message', 'end']);
+  assert.equal(posts[2].sig.model, '3.6 Flash', 'once, as a server fact');
   const end = posts.at(-1);
   assert.equal(end.outcome, 'completed');
   assert.ok(end.lastChunk >= posts[1].t);
   assert.ok(posts.every((p) => p.localId === posts[0].localId));
   assert.ok(!JSON.stringify(posts).includes(SECRET) && !JSON.stringify(posts).includes('TOKEN'));
+});
+
+// Stop finishes the record at the press, so a model learned only at loadend would be lost.
+test('the model is posted while streaming, so a stopped reply keeps it', () => {
+  posts.length = 0;
+  const x = xhr(`${SG}?rt=c`, 'f.req=x');
+  x.responseText = stream([null, '3.6 Flash']);
+  x.fire('progress');
+  assert.deepEqual(posts.map((p) => p.type), ['start', 'firstByte', 'message']);
 });
 
 test('an aborted or failed reply XHR ends as error', () => {
