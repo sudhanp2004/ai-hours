@@ -4,3 +4,6 @@ node_modules/
 
 # Private session transcripts
 2026-10-01-040357-im-thinking-of-making-an-browser-extension-that.txt
+
+# Source art for the icons (has a watermark; extension/icons/ holds the cleaned versions)
+Gemini_Generated_Image_*.png

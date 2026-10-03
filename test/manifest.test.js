@@ -19,7 +19,12 @@ test('permissions are minimal, and grant exactly the sites being measured', () =
 });
 
 test('every referenced file exists', () => {
-  const files = [manifest.background.service_worker, manifest.action.default_popup, ...manifest.content_scripts.flatMap((c) => c.js)];
+  const files = [
+    manifest.background.service_worker, manifest.action.default_popup, ...manifest.content_scripts.flatMap((c) => c.js),
+    ...Object.values(manifest.icons), ...Object.values(manifest.action.default_icon),
+  ];
+  // Chrome needs a 128 px icon, or the extension shows a grey letter tile.
+  assert.ok(manifest.icons['128']);
   for (const f of files) assert.ok(fs.existsSync(path.join(root, f)), f);
   const html = fs.readFileSync(path.join(root, manifest.action.default_popup), 'utf8');
   for (const [, src] of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
