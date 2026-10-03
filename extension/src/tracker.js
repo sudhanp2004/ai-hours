@@ -12,6 +12,7 @@
     if (sig.requestId && !s.requestId) s.requestId = sig.requestId;
     if (sig.role !== 'assistant' || sig.contentType === 'model_editable_context') return;
     if (sig.messageId) s.messageId = sig.messageId;
+    if (sig.model) s.model = sig.model; // the latest named model answered last
     if (sig.createTime != null && s.msgCreate == null) s.msgCreate = sig.createTime;
     if (sig.reasoningStart != null && s.reasoningStart == null) s.reasoningStart = sig.reasoningStart;
     if (sig.reasoningEnd != null) s.reasoningEnd = sig.reasoningEnd;

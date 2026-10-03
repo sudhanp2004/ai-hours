@@ -75,11 +75,16 @@
 
   // event (1) → conversation state (1) → conversation (2) → status (3): 2 while a reply runs,
   // 1 when idle. Text deltas, acks and heartbeats are other event fields, so they read null.
+  // The same conversation's field 6.2 names its model (e.g. claude-opus-5-5).
   function statusOf(msg) {
     try {
-      return num(sub(sub(sub(msg, 1), 1), 2), 3) ?? null;
+      const conv = sub(sub(sub(msg, 1), 1), 2);
+      const status = num(conv, 3) ?? null;
+      const m = sub(sub(conv, 6), 2);
+      const model = m && m.length <= 64 ? new TextDecoder().decode(m) : null;
+      return { status, model: model && /^[\w.-]+$/.test(model) ? model : null };
     } catch {
-      return null;
+      return { status: null, model: null };
     }
   }
 
@@ -99,9 +104,9 @@
         .then(async () => {
           if (flag & 2) return;
           const msg = flag & 1 ? await gunzip(payload) : payload;
-          const s = statusOf(msg);
-          if (s === 2) onStatus('running');
-          else if (s !== null) onStatus('idle');
+          const { status, model } = statusOf(msg);
+          if (status === 2) onStatus('running', model);
+          else if (status !== null) onStatus('idle', model);
         })
         .catch(() => {}); // one bad frame is skipped, never fatal
     }

@@ -189,6 +189,18 @@ test('server merge: skips memory-context messages, keeps first reasoning start a
   assert.deepEqual(latest('a').server, { messageId: 'r1', msgCreate: 2, reasoningStart: 10, reasoningEnd: 30 });
 });
 
+// ChatGPT can switch models inside one turn (auto routing), so the last one named wins.
+test('server merge: the answering model is kept, the latest named one winning', () => {
+  const { latest, sig } = setup();
+  sig('start', { localId: 'a', t: 1000 });
+  sig('message', { localId: 'a', sig: msg({ model: 'gpt-5' }) });
+  sig('message', { localId: 'a', sig: msg({ model: null }) });
+  sig('message', { localId: 'a', sig: msg({ model: 'gpt-5-thinking' }) });
+  sig('message', { localId: 'a', sig: msg({ contentType: 'model_editable_context', model: 'memory-model' }) });
+  sig('end', { localId: 'a', t: 5000, lastChunk: 5000, outcome: 'completed' });
+  assert.equal(latest('a').server.model, 'gpt-5-thinking');
+});
+
 test('request that fails before the stop-button debounce settles is still paired, not double-counted', () => {
   const { tracker, writes, latest, sig, show, hide } = setup();
   sig('start', { localId: 'a', t: 1000 });

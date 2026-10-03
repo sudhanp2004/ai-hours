@@ -10,7 +10,7 @@ const msg = (over) => ({
   data: JSON.stringify({
     backend_uuid: 'b-1', context_uuid: 'ctx-1', uuid: 'u-1', frontend_context_uuid: 'fctx-1',
     frontend_uuid: 'f-1', status: 'PENDING', text_completed: false, final_sse_message: false,
-    message_mode: 'STREAMING', text: SECRET, blocks: [{ markdown_block: { answer: SECRET } }], ...over,
+    message_mode: 'STREAMING', display_model: 'turbo', text: SECRET, blocks: [{ markdown_block: { answer: SECRET } }], ...over,
   }),
 });
 
@@ -42,7 +42,7 @@ test('end_of_stream → done', () => {
 
 test('a message event → structural signal keyed by the entry’s frontend uuid, no text', () => {
   const sig = site.parseEvent(msg());
-  assert.deepEqual(sig, { kind: 'message', role: 'assistant', status: 'PENDING', turnExchangeId: 'f-1' });
+  assert.deepEqual(sig, { kind: 'message', role: 'assistant', status: 'PENDING', turnExchangeId: 'f-1', model: 'turbo' });
   assert.ok(!JSON.stringify(sig).includes(SECRET));
 });
 
@@ -81,7 +81,7 @@ const THREAD = {
   thread_metadata: { title: SECRET },
   entries: [
     {
-      backend_uuid: 'b-1', frontend_uuid: 'f-1', status: 'COMPLETED', query_str: SECRET,
+      backend_uuid: 'b-1', frontend_uuid: 'f-1', status: 'COMPLETED', query_str: SECRET, display_model: 'turbo',
       entry_created_datetime: '2026-10-02T21:18:25.305997+00:00',
       entry_updated_datetime: '2026-10-02T21:18:29.743000+00:00',
       updated_datetime: '2026-10-02T21:19:07.999000+00:00',
@@ -106,6 +106,7 @@ test('parseConversation: one turn per entry, server span from created to updated
   assert.ok(Math.abs(a.startSec - (Date.parse('2026-10-02T21:18:25Z') / 1000 + 0.305997)) < 1e-6);
   assert.ok(Math.abs(a.endSec - a.startSec - 4.437) < 0.001);
   assert.equal(a.userCreateTime, a.startSec);
+  assert.equal(a.model, 'turbo');
   assert.equal(a.startIsSend, true, 'the span already includes the send, so recovery must not add watched time to it');
   assert.equal(b.endSec, null, 'a turn still generating has no end, so it is not usable yet');
   assert.ok(!JSON.stringify(turns).includes(SECRET));

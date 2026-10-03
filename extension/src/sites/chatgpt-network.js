@@ -20,6 +20,8 @@
       requestId: str(md.request_id),
       reasoningStart: num(md.reasoning_start_time),
       reasoningEnd: num(md.reasoning_end_time),
+      // The model that answered; "auto" is routed, so this can differ from the picker.
+      model: str(md.model_slug),
     };
   }
 
@@ -79,7 +81,7 @@
         cur = {
           turnExchangeId, requestId: str(md.request_id), userMessageId: str(m.id),
           userCreateTime: create, startSec: null, endSec: null,
-          reasoningStart: null, reasoningEnd: null, finishType: null,
+          reasoningStart: null, reasoningEnd: null, finishType: null, model: null,
         };
         turns.push(cur);
         continue;
@@ -88,7 +90,7 @@
       if (!cur) {
         cur = {
           turnExchangeId: null, requestId: null, userMessageId: null, userCreateTime: null,
-          startSec: null, endSec: null, reasoningStart: null, reasoningEnd: null, finishType: null,
+          startSec: null, endSec: null, reasoningStart: null, reasoningEnd: null, finishType: null, model: null,
         };
         turns.push(cur);
       }
@@ -100,6 +102,7 @@
       if (str(md.request_id)) cur.requestId = cur.requestId ?? str(md.request_id);
       if (num(md.reasoning_start_time) != null) cur.reasoningStart = num(md.reasoning_start_time);
       if (num(md.reasoning_end_time) != null) cur.reasoningEnd = num(md.reasoning_end_time);
+      if (str(md.model_slug)) cur.model = str(md.model_slug);
       const ft = str(md.finish_details?.type);
       if (ft) cur.finishType = ft;
     }

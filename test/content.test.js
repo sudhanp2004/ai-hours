@@ -8,7 +8,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.join(__dirname, '..', 'extension');
-const FILES = ['sites/chatgpt-page', 'verify', 'reconcile', 'tracker', 'total', 'overlay'];
+const FILES = ['sites/chatgpt-page', 'verify', 'reconcile', 'tracker', 'total', 'models', 'breakdown-view', 'overlay'];
 
 const T0 = 1790764800000;
 const rec = (over) => ({
@@ -24,6 +24,7 @@ function fakeDocument(selector) {
     const el = {
       isConnected: false, textContent: '', classList: { toggle() {}, add() {} }, style: {}, dataset: {},
       setAttribute() {}, getAttribute: () => null, remove() {}, appendChild() {}, querySelector: () => null,
+      querySelectorAll: () => [], addEventListener() {},
     };
     return el;
   };
@@ -34,6 +35,8 @@ function fakeDocument(selector) {
     createElement: () => ({ ...makeEl(), attachShadow: () => ({ innerHTML: '', querySelector: makeEl }) }),
     querySelector: () => null,
     querySelectorAll: () => [],
+    addEventListener() {},
+    removeEventListener() {},
     documentElement: makeEl(),
   };
 }

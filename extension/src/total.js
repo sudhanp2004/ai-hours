@@ -19,20 +19,56 @@
     return { totalMs, unknown };
   };
 
+  // What one record adds to the live count right now: null if nothing, else its ms and
+  // whether it is still gaining time.
+  function liveShare(r, now) {
+    if (r.recovered) return { ms: Math.max(0, r.recovered.durationMs), live: false };
+    if (r.end != null) return { ms: Math.max(0, r.end - r.start), live: false };
+    // A pending record's tab is gone: we can no longer see the work, so we don't count it.
+    if (r.outcome === 'pending') return null;
+    if (now - (r.lastSeen ?? r.start) > LIVE_STALE_MS) return null;
+    return { ms: Math.max(0, now - r.start), live: true };
+  }
+
   // Saved total plus every reply still gaining time, in any tab. `working` is how many
   // replies that is, so the pill can show ×N (spec §6b).
   ns.liveTotal = function liveTotal(records, now) {
     let ms = 0;
     let working = 0;
     for (const r of records) {
-      if (r.recovered) ms += Math.max(0, r.recovered.durationMs);
-      else if (r.end != null) ms += Math.max(0, r.end - r.start);
-      // A pending record's tab is gone: we can no longer see the work, so we don't count it.
-      else if (r.outcome === 'pending') continue;
-      else if (now - (r.lastSeen ?? r.start) > LIVE_STALE_MS) continue;
-      else ms += Math.max(0, now - r.start), working++;
+      const s = liveShare(r, now);
+      if (s) (ms += s.ms), (working += s.live ? 1 : 0);
     }
     return { ms, working };
+  };
+
+  // The same count as liveTotal, split by site and then by model (spec §11, Breakdown).
+  // Records from before sites existed were all ChatGPT; before models were recorded, the
+  // model is null.
+  ns.breakdown = function breakdown(records, now) {
+    const sites = new Map();
+    let ms = 0;
+    let working = 0;
+    for (const r of records) {
+      const s = liveShare(r, now);
+      if (!s) continue;
+      const site = r.site || 'chatgpt';
+      const model = r.server?.model ?? null;
+      let row = sites.get(site);
+      if (!row) sites.set(site, (row = { site, ms: 0, working: 0, models: new Map() }));
+      let m = row.models.get(model);
+      if (!m) row.models.set(model, (m = { model, ms: 0, working: 0 }));
+      const w = s.live ? 1 : 0;
+      ms += s.ms, working += w;
+      row.ms += s.ms, row.working += w;
+      m.ms += s.ms, m.working += w;
+    }
+    const byMs = (a, b) => b.ms - a.ms;
+    return {
+      ms,
+      working,
+      sites: [...sites.values()].map((row) => ({ ...row, models: [...row.models.values()].sort(byMs) })).sort(byMs),
+    };
   };
 
   ns.hasRecentHealthFlags = (records, now) =>

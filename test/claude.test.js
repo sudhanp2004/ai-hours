@@ -77,3 +77,11 @@ test('an unknown status value after running counts as not running', async () => 
   const seen = await feed([pb.env(0, pb.statusFrame(CONV, 2)), pb.env(0, pb.statusFrame(CONV, 7))]);
   assert.deepEqual(seen, ['running', 'idle']);
 });
+
+test('timeline: the conversation’s model is reported with its status', async () => {
+  const models = [];
+  const dec = site.createTimelineDecoder((s, model) => models.push(model));
+  dec.push(new Uint8Array(pb.env(0, pb.statusFrame(CONV, 2))));
+  await dec.idle();
+  assert.deepEqual(models, ['claude-opus-5-5']);
+});

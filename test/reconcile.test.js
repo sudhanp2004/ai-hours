@@ -92,6 +92,12 @@ test('a backwards server span (device clock drift) can never subtract from the t
   assert.ok(r.recovered.durationMs >= 0);
 });
 
+test('a recovered record learns its model from the turn, unless it already knew it', () => {
+  assert.equal(recover(watched({ server: {} }), turn({ model: 'gpt-5' }), T0 + 60000).server.model, 'gpt-5');
+  assert.equal(recover(watched({ server: { model: 'gpt-5-thinking' } }), turn({ model: 'gpt-5' }), T0 + 60000).server.model, 'gpt-5-thinking');
+  assert.equal(recover(watched({ server: {} }), turn(), T0 + 60000).server.model, undefined);
+});
+
 test('a recovered record keeps its identity, so it still counts once', () => {
   const r = recover(watched(), turn(), T0 + 60000);
   assert.equal(r.id, 'r1');

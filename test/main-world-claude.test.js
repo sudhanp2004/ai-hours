@@ -53,7 +53,8 @@ test('send → running → idle is one completed reply; no text crosses the boun
   await tick();
   tl.push(pb.statusFrame(CONV, 1));
   const end = await until('end');
-  assert.deepEqual(posts.map((p) => p.type), ['start', 'firstByte', 'end']);
+  assert.deepEqual(posts.map((p) => p.type), ['start', 'firstByte', 'message', 'end']);
+  assert.equal(posts[2].sig.model, 'claude-opus-5-5', 'the model, once, as a server fact');
   assert.equal(end.outcome, 'completed');
   assert.ok(end.t >= posts[1].t);
   assert.ok(posts.every((p) => p.localId === posts[0].localId));

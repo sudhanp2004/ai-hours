@@ -6,7 +6,7 @@ Date: 2026-09-30. Builds on the planning handoff (product principles, rejected i
 
 A Chrome MV3 extension that measures, honestly, how long AI has worked for the user on **chatgpt.com**, and shows one number: total AI-hours.
 
-Product principles (unchanged from handoff): one number · honest (unknown is shown as unknown, never guessed) · zero pressure · near-invisible · privacy-first (record *when*, never *what*).
+Product principles (unchanged from handoff, except the first, changed 2026-10-03 — see §11 Breakdown): one number up front, with a per-LLM breakdown on click · honest (unknown is shown as unknown, never guessed) · zero pressure · near-invisible · privacy-first (record *when*, never *what*).
 
 ## 2. Decisions
 
@@ -247,10 +247,24 @@ Scaffold the adapter shape for every major chat LLM; enable a site only once its
 behaviour has been observed in DevTools. Full parity is the target — a new site gets
 live counting, Stop-now, the pill and closed-tab recovery, not a reduced version.
 
-The pill and the popup still show **one number**: records from every site are summed by
-duration regardless of which site produced them (`summarize` and `liveTotal` never read
-`site`). There is no per-site breakdown, because a breakdown invites comparing a
-precisely-measured site against a roughly-measured one as if they were equal.
+**Changed 2026-10-03 (user decision): Breakdown.** The pill and the popup still lead with one
+number, the sum over every site. Clicking the pill (or opening the popup) shows that number
+split by LLM, and each LLM opens to its models (`breakdown` in `total.js`, the same count as
+`liveTotal`, so the rows always add up to the pill). The concern that ruled this out before is
+real: sites without closed-tab recovery (Claude, Gemini) can only err low, so their rows carry
+an asterisk and a footnote saying so, rather than being compared as if equally precise.
+
+Each record keeps the answering model as `server.model`, from the wire (never from the page's
+model picker). Names are tidied by rule in `models.js` (`claude-opus-5-5` → "Opus 5.5",
+`gpt-5-thinking` → "GPT-5 Thinking"); an unknown slug is shown as sent. Records from before
+this change have no model and show as "Model not recorded".
+
+| ⚑ | Source of the model | Status |
+|---|---|---|
+| ⚑11a | ChatGPT: stream message `metadata.model_slug` (and the same in a loaded conversation) | not yet seen on the wire; if absent, ChatGPT rows show "Model not recorded" |
+| ⚑11b | Perplexity: `display_model` on every stream event and thread entry | seen (`"turbo"` for the default); the mapping of its values to product names is unknown, so they show raw |
+| ⚑11c | claude.ai: the timeline's conversation field 6.2 (`claude-opus-5-5`) | seen in the probe |
+| ⚑11d | Gemini: none found yet | its row has no models; would need one more probe |
 
 ### The adapter contract
 

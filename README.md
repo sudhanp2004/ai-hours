@@ -43,6 +43,12 @@ extensions installed this way; click the × to dismiss it.
 Extensions loaded this way do not update themselves. Download the new version (or `git pull`),
 then click the ↻ reload icon on the AI Hours card in `chrome://extensions`. Your total is kept.
 
+## The breakdown
+
+Click the counter on the page (or the toolbar icon) to see the time per assistant. Click an
+assistant to see its models, such as Opus 5.5 or GPT-5 Thinking. An asterisk marks sites where
+a reply in a tab you closed mid-way can't be recovered, so their time may be a little low.
+
 ## How it works
 
 - A script in the chat page notices the request that streams the reply, and times it from

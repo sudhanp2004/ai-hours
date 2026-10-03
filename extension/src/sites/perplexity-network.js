@@ -33,7 +33,7 @@
     if (!obj(j)) return null;
     // frontend_uuid names the entry (one question and its answer) in the stream and in the
     // loaded thread alike, so it is this site's turn id.
-    return { kind: 'message', role: 'assistant', status: str(j.status), turnExchangeId: str(j.frontend_uuid) };
+    return { kind: 'message', role: 'assistant', status: str(j.status), turnExchangeId: str(j.frontend_uuid), model: str(j.display_model) };
   }
 
   // The send body. Ids only: the question (query_str) is in the same body and is never read.
@@ -63,6 +63,7 @@
         // A turn still generating has no end yet, so it is not usable for recovery.
         endSec: e.status === 'COMPLETED' && created != null ? isoSec(e.entry_updated_datetime) : null,
         startIsSend: true,
+        model: str(e.display_model),
         reasoningStart: null, reasoningEnd: null,
         // A stopped entry is also COMPLETED on the wire; no stop flag was seen.
         finishType: null,

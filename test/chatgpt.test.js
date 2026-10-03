@@ -57,13 +57,14 @@ test('message add → structural signal only', () => {
         create_time: 1790764724.1,
         status: 'in_progress',
         content: { content_type: 'text', parts: [SECRET] },
-        metadata: { turn_exchange_id: 't1', request_id: 'r1', reasoning_start_time: 1790764720.5, title: SECRET },
+        metadata: { turn_exchange_id: 't1', request_id: 'r1', reasoning_start_time: 1790764720.5, title: SECRET, model_slug: 'gpt-5-thinking' },
       },
     },
   }));
   assert.deepEqual(sig, {
     kind: 'message', role: 'assistant', contentType: 'text', status: 'in_progress', messageId: 'm1',
     createTime: 1790764724.1, turnExchangeId: 't1', requestId: 'r1', reasoningStart: 1790764720.5, reasoningEnd: null,
+    model: 'gpt-5-thinking',
   });
 });
 
@@ -274,4 +275,13 @@ test('no conversation field ever carries message text', () => {
     ],
   };
   assert.ok(!roundtrip(site.parseConversation(json)).includes(SECRET));
+});
+
+// The model slug names the model that actually answered (ChatGPT may route "auto" to one).
+test('parseConversation carries the answering model, for a recovered record', () => {
+  const [t] = site.parseConversation({ messages: [
+    { id: 'u1', author: { role: 'user' }, create_time: 1, metadata: { turn_exchange_id: 'tx' } },
+    { id: 'a1', author: { role: 'assistant' }, create_time: 2, update_time: 3, metadata: { turn_exchange_id: 'tx', model_slug: 'gpt-5' } },
+  ] });
+  assert.equal(t.model, 'gpt-5');
 });

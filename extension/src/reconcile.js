@@ -45,6 +45,8 @@
     const dur = t.startIsSend ? Math.max(observed, serverMs) : observed + serverMs;
     return {
       ...rec,
+      // Seen live, the model came from the stream; otherwise the saved turn names it.
+      server: { ...rec.server, ...(rec.server?.model == null && t.model ? { model: t.model } : {}) },
       outcome: 'recovered',
       end: null, // the duration lives in recovered.durationMs; end stays unknown
       recovered: {

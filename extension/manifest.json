@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Hours",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Counts how long AI has worked for you. Records when AI works, never what was said.",
   "icons": {
     "16": "icons/icon16.png",
@@ -55,6 +55,8 @@
         "src/reconcile.js",
         "src/tracker.js",
         "src/total.js",
+        "src/models.js",
+        "src/breakdown-view.js",
         "src/overlay.js",
         "src/content.js"
       ],
@@ -82,6 +84,8 @@
         "src/reconcile.js",
         "src/tracker.js",
         "src/total.js",
+        "src/models.js",
+        "src/breakdown-view.js",
         "src/overlay.js",
         "src/content.js"
       ],
@@ -109,6 +113,8 @@
         "src/reconcile.js",
         "src/tracker.js",
         "src/total.js",
+        "src/models.js",
+        "src/breakdown-view.js",
         "src/overlay.js",
         "src/content.js"
       ],
@@ -136,6 +142,8 @@
         "src/reconcile.js",
         "src/tracker.js",
         "src/total.js",
+        "src/models.js",
+        "src/breakdown-view.js",
         "src/overlay.js",
         "src/content.js"
       ],

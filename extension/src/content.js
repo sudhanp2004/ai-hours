@@ -141,7 +141,7 @@
     // Every tab's open replies, not just this one's: two tabs working means the count
     // genuinely moves twice as fast, and ×N says so (spec §6b).
     const { ms, working } = ns.liveTotal([...records.values()], Date.now());
-    overlay.render(ms, working);
+    overlay.render(ms, working, () => ns.breakdown([...records.values()], Date.now()));
   }
 
   function onStorage(changes, area) {

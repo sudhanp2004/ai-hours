@@ -90,13 +90,15 @@
     post('end', { localId, t: Date.now(), lastChunk: null, outcome: 'error' });
   }
 
-  function onStatus(status) {
+  function onStatus(status, model) {
     const r = reply;
     if (!r) return;
     const t = Date.now();
     if (status === 'running') {
       if (!r.running) (r.running = true), (r.lastAlive = t), post('firstByte', { localId: r.localId, t });
       else if (t - r.lastAlive >= aliveEvery()) (r.lastAlive = t), post('alive', { localId: r.localId, t });
+      // The model, once per reply, as the same server fact the other sites send.
+      if (model && model !== r.model) (r.model = model), post('message', { localId: r.localId, sig: { kind: 'message', role: 'assistant', model } });
     } else if (r.running) {
       // Idle before running is the server echoing the state the send found; only idle
       // after running ends the reply.
