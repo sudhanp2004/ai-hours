@@ -109,6 +109,43 @@ test('a reply never seen to go idle is closed off by the next send, without a gu
   assert.notEqual(second.localId, first.localId);
 });
 
+// Status frames arrive only at a reply's start and end; text deltas fill the middle.
+test('a long reply stays alive on deltas alone, so other tabs keep counting it', async () => {
+  posts.length = 0;
+  const tl = openTimeline();
+  respond = (input) => (String(input).endsWith('StreamTimeline') ? tl.res : proto());
+  globalThis.__aiHours.site.aliveEveryMs = 5;
+  await fetch(`${RPC}/StreamTimeline`, { method: 'POST' });
+  await fetch(`${RPC}/PerformAction`, { method: 'POST', body: send() });
+  tl.push(pb.statusFrame(CONV, 2));
+  for (let i = 0; i < 4; i++) {
+    await tick(10);
+    tl.push(pb.deltaFrame('x'));
+  }
+  await tick();
+  tl.push(pb.statusFrame(CONV, 1));
+  await until('end');
+  delete globalThis.__aiHours.site.aliveEveryMs;
+  assert.ok(posts.filter((p) => p.type === 'alive').length >= 2);
+});
+
+// After a refresh the page sends nothing, but its timeline opens on a reply still running.
+test('a reply already running when the page loads posts resume, then ends on idle', async () => {
+  posts.length = 0;
+  const tl = openTimeline();
+  respond = () => tl.res;
+  await fetch(`${RPC}/StreamTimeline`, { method: 'POST' });
+  tl.push(pb.statusFrame(CONV, 2));
+  await tick();
+  tl.push(pb.statusFrame(CONV, 1));
+  const end = await until('end');
+  const resume = posts.find((p) => p.type === 'resume');
+  assert.ok(resume, 'resume');
+  assert.equal(end.localId, resume.localId);
+  assert.equal(end.outcome, 'completed');
+  assert.ok(!posts.some((p) => p.type === 'start'), 'no new reply is invented');
+});
+
 test('settings actions and other RPCs pass through silently', async () => {
   posts.length = 0;
   respond = () => proto();

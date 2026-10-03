@@ -31,6 +31,11 @@
     });
   }
 
+  // Ids of the records the previous page left unfinished, newest first once sorted. One of
+  // them may still be running on the server, and this page can take it over (onResume).
+  let resumable = [];
+  const RESUME_WITHIN_MS = 10 * 60 * 1000;
+
   // A page that loads mid-reply (reload, or ChatGPT's own navigation) leaves records from
   // the previous document behind. They can no longer be watched, so treat them as a close:
   // at most ~2 s early, because a streaming reply refreshes its sign of life every 2 s.
@@ -42,6 +47,7 @@
       (r) => r.tabId === tabId && r.end == null && !r.recovered && r.outcome !== 'pending',
     );
     if (!orphans.length) return;
+    resumable = orphans.map((r) => r.id);
     const update = {};
     for (const r of orphans) update['rec:' + r.id] = { ...r, outcome: 'pending', closedAt: Date.now() };
     try {
@@ -83,6 +89,7 @@
 
   function handle(msg) {
     if (msg.type === 'conversation') return onConversation(msg);
+    if (msg.type === 'resume') return onResume(msg);
     tracker.onSignal(msg);
   }
 
@@ -106,6 +113,20 @@
       update['rec:' + r.id] = r;
     }
     chrome.storage.local.set(update).catch((e) => console.warn('AI Hours: could not save recovered record', e));
+  }
+
+  // This page sees a reply running that it did not send: the refresh happened mid-reply.
+  // Hand it the newest record the previous page left, if that one is recent and still open.
+  // No orphan means the reply was sent from elsewhere, and it is not ours to count.
+  function onResume({ localId, t }) {
+    const candidates = resumable
+      .map((id) => records.get('rec:' + id))
+      .filter((r) => r && r.end == null && !r.recovered && t - (r.lastSeen ?? r.start) < RESUME_WITHIN_MS)
+      .sort((a, b) => b.start - a.start);
+    const rec = candidates[0];
+    if (!rec) return;
+    resumable = resumable.filter((id) => id !== rec.id);
+    tracker.adopt(localId, rec, t);
   }
 
   let lastVisible = false;

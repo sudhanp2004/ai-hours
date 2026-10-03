@@ -200,7 +200,7 @@ ChatGPT keeps generating after the tab is gone and saves the finished reply. So 
 | Matching | 1. the record's `server.turnExchangeId`; 2. else `sent.messageId` == the user message's id; 3. else the record's `start` within 2 s of the user message's `create_time` (client clock, verified to match the send within 10 ms). All are known at send time, so this works even if the tab closed 1 s after send. |
 | Duration | `recovered.durationMs = serverEnd − serverStart`, from the assistant message's `create_time` → `update_time`, plus the already-observed `min(closedAt, lastSeen) − start` if the record was watched before the close. Outcome `recovered`. |
 | Reply still running when reopened | Stays `pending`; finished on a later conversation load. |
-| Never reopened | Stays `pending` → the popup's ⚑6 footnote counts it as unknown. Not guessed. |
+| Never reopened | Stays `pending`. **Changed 2026-10-03 (user decision):** it counts the time that was watched (`start` → `lastSeen`), a measured lower bound, so a refresh or close never lowers the total; the popup's ⚑6 footnote now says how many replies were only partly counted. Still not guessed. |
 
 **The single clock rule.** The observed part is client-clock, the reconstructed part server-clock, and they are added as two separate spans. `start` (client) is never subtracted from a server timestamp. This leaves one honest undercount: if the tab closed during the 3–6 s queue *before* generation started, that queue is not counted.
 
@@ -485,6 +485,22 @@ Built but not yet seen working end to end:
 | ⚑10a | claude.ai's field numbers (send 2, stop 3, status 1.1.2.3) stay as observed in one session | sends go unseen (nothing counted) or never end (closed off at the next send as error; the live pill counts it at most until the 30 s staleness cutoff). An undercount in the stored total, never an overcount |
 | ⚑10b | Gemini's page calls `XMLHttpRequest.prototype.send` (Closure's XhrIo does) | nothing counted on Gemini |
 | ⚑10c | The pill's position (tuned for ChatGPT's header) doesn't cover controls on claude.ai or Gemini | cosmetic |
+
+**Surviving a refresh (2026-10-03, user decision).** A refresh mid-reply used to drop that reply
+from the pill (its record became `pending`, which counted nothing) and only ChatGPT and
+Perplexity ever added it back. Now:
+- **Every site:** an unfinished record that no tab is watching (pending, or silent past the
+  30 s cutoff) counts `lastSeen − start`, in `summarize`, `liveTotal` and `breakdown` alike.
+  A recovery later replaces it with the full span; it is never added twice.
+- **claude.ai:** the reloaded page's timeline still reports the reply running. With no send
+  from this page, `main-world.js` posts `resume`; `content.js` hands the tracker the newest
+  record the previous page left in this tab (if its last sign of life is under 10 minutes
+  old), which then counts live and ends on the same client clock, flagged `resumed`. A
+  running reply with no such orphan (sent from another device or tab) is not counted here.
+- **claude.ai liveness:** status messages come only at a reply's start and end, so a long
+  reply used to go stale after 30 s. Every data frame (deltas, heartbeats) is now a sign of life.
+- Not done: ChatGPT and Perplexity re-attach their stream on reload through endpoints we do
+  not wrap, so their resumed tail is only counted when the conversation load recovers it.
 
 **Clock skew seen on this machine (2026-10-03):** Perplexity's server timestamps ran a steady
 ~4.8 s ahead of the client clock (created − send = 4.81–4.86 s on all three turns). Never mix a

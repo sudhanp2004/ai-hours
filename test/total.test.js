@@ -20,13 +20,16 @@ test('negative durations (clock changed mid-response) count as zero', () => {
   assert.equal(summarize([rec({ end: NOW - 3 * HOUR })], NOW).totalMs, 0);
 });
 
-test('unknown counts only end-less records older than 1 h; younger ones are in progress', () => {
-  const { unknown, totalMs } = summarize([
-    rec({ start: NOW - 2 * HOUR }),
-    rec({ start: NOW - 30 * 1000 }),
+// Changed 2026-10-03 (user decision): an unfinished reply keeps the time that was watched,
+// so a refresh or a closed tab never takes seconds off the total. It is a lower bound, not a
+// guess, and a later recovery replaces it with the full span.
+test('an unfinished reply counts what was watched; one older than 1 h is reported as partial', () => {
+  const { partial, totalMs } = summarize([
+    rec({ start: NOW - 2 * HOUR, lastSeen: NOW - 2 * HOUR + 7000, outcome: 'pending' }),
+    rec({ start: NOW - 30 * 1000, lastSeen: NOW - 25 * 1000 }),
   ], NOW);
-  assert.equal(unknown, 1);
-  assert.equal(totalMs, 0);
+  assert.equal(partial, 1);
+  assert.equal(totalMs, 12000);
 });
 
 test('health flags only matter for the last 7 days', () => {
@@ -76,19 +79,19 @@ test('liveTotal adds a recovered record by its recovered duration, never end - s
   assert.equal(liveTotal([rec], NOW).ms, 45000);
 });
 
-test('liveTotal excludes a pending record: a closed tab stops counting at once', () => {
+test('liveTotal: a pending record stops gaining at once, but keeps what was watched', () => {
   const records = [
     saved(NOW - 60000, NOW - 50000),
     live(NOW - 40000, { tabId: 9, outcome: 'pending', lastSeen: NOW - 30000 }),
   ];
-  assert.deepEqual(liveTotal(records, NOW), { ms: 10000, working: 0 });
+  assert.deepEqual(liveTotal(records, NOW), { ms: 20000, working: 0 });
 });
 
 test('liveTotal stops counting an open record with no sign of life for 30 s', () => {
   const fresh = [live(NOW - 10000, { lastSeen: NOW - (STALE_AFTER_MS - 1000) })];
   assert.equal(liveTotal(fresh, NOW).ms, 10000, 'a tab still streaming is inside the cutoff');
   const dead = [live(NOW - 100000, { lastSeen: NOW - (STALE_AFTER_MS + 1000) })];
-  assert.equal(liveTotal(dead, NOW).ms, 0, 'a crashed browser cannot be watched further');
+  assert.deepEqual(liveTotal(dead, NOW), { ms: 100000 - STALE_AFTER_MS - 1000, working: 0 }, 'a crashed browser keeps what was watched, and no more');
 });
 
 test('liveTotal falls back to start when a record never got a sign of life', () => {

@@ -96,7 +96,9 @@
   // Splits Connect envelopes (1 flag byte + 4-byte big-endian length) and reports
   // 'running' / 'idle' per status message, in arrival order. Flag 1 = gzip, flag 2 = the
   // end-of-stream trailer. The stream's own end means nothing: the server rotates it.
-  function createTimelineDecoder(onStatus) {
+  // onActivity fires for every data frame: status messages come only at a reply's start and
+  // end, so the deltas and heartbeats between them are what show it is still alive.
+  function createTimelineDecoder(onStatus, onActivity) {
     let buf = new Uint8Array(0);
     let chain = Promise.resolve();
     function handle(flag, payload) {
@@ -119,6 +121,7 @@
         while (buf.length >= 5) {
           const len = ((buf[1] << 24) | (buf[2] << 16) | (buf[3] << 8) | buf[4]) >>> 0;
           if (buf.length < 5 + len) break;
+          if (!(buf[0] & 2)) onActivity?.();
           handle(buf[0], buf.slice(5, 5 + len));
           buf = buf.slice(5 + len);
         }

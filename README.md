@@ -14,8 +14,8 @@ storage: there is no server, no account and no analytics.
 |---|---|---|
 | chatgpt.com | yes | recovered when you reopen the chat |
 | perplexity.ai | yes (new, not yet tested end to end) | recovered when you reopen the thread |
-| claude.ai | yes (new, not yet tested end to end) | counted as unknown |
-| gemini.google.com | yes (new, not yet tested end to end) | counted as unknown |
+| claude.ai | yes | the time you watched; if you refresh and it's still running, counted to the end |
+| gemini.google.com | yes | the time you watched |
 
 "Counted as unknown" means a reply whose tab you closed mid-way is not added to your total:
 Claude and Gemini don't save an end time we can read back, and AI Hours never guesses. The
@@ -56,7 +56,8 @@ a reply in a tab you closed mid-way can't be recovered, so their time may be a l
 - The page's Stop button is watched as a second, independent check. A reply seen only one way
   is still counted, but flagged.
 - If you close a tab mid-reply, the record waits. When you reopen that chat, the site's own
-  saved timestamps finish it. If they can't, it is reported as unknown, never guessed.
+  saved timestamps finish it. If they can't, it keeps the time you watched it work, never a
+  guess. Refreshing mid-reply never lowers your total.
 
 The design, and what was verified on each site, is in
 [`docs/superpowers/specs/2026-09-30-ai-hours-v1-design.md`](docs/superpowers/specs/2026-09-30-ai-hours-v1-design.md).

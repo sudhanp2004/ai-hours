@@ -91,9 +91,15 @@
   }
 
   function onStatus(status, model) {
+    const t = Date.now();
+    // Running with no send from this page: the page was refreshed (or reopened) mid-reply.
+    // Say so; content.js hands it the record the previous page left, if there is one.
+    if (!reply && status === 'running') {
+      reply = { localId: crypto.randomUUID(), start: t, running: true, lastAlive: t };
+      post('resume', { localId: reply.localId, t });
+    }
     const r = reply;
     if (!r) return;
-    const t = Date.now();
     if (status === 'running') {
       if (!r.running) (r.running = true), (r.lastAlive = t), post('firstByte', { localId: r.localId, t });
       else if (t - r.lastAlive >= aliveEvery()) (r.lastAlive = t), post('alive', { localId: r.localId, t });
@@ -107,11 +113,18 @@
     }
   }
 
+  function onActivity() {
+    const r = reply;
+    if (!r?.running) return;
+    const t = Date.now();
+    if (t - r.lastAlive >= aliveEvery()) (r.lastAlive = t), post('alive', { localId: r.localId, t });
+  }
+
   async function readTimeline(args) {
     const res = await origFetch.apply(window, args);
     try {
       if (!res.ok || !res.body) return res;
-      const decoder = ns().site.createTimelineDecoder(onStatus);
+      const decoder = ns().site.createTimelineDecoder(onStatus, onActivity);
       const reader = res.clone().body.getReader();
       (async () => {
         for (;;) {

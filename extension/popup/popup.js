@@ -28,8 +28,11 @@
   });
 
   const now = Date.now();
-  const { unknown } = ns.summarize([...records.values()], now);
-  if (unknown) show('unknown', `+ ${unknown} response${unknown === 1 ? '' : 's'} with unknown duration`);
+  const { partial } = ns.summarize([...records.values()], now);
+  if (partial) {
+    const n = `${partial} repl${partial === 1 ? 'y was' : 'ies were'}`;
+    show('unknown', `${n} only counted while you watched: the tab closed mid-reply. Reopening the chat finishes them on ChatGPT and Perplexity.`);
+  }
   if (ns.hasRecentHealthFlags([...records.values()], now)) show('health');
 
   function show(id, text) {

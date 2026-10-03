@@ -147,6 +147,16 @@
       for (const [id, c] of closed) if (t - c.at > FORGET_AFTER_MS) closed.delete(id);
     }
 
-    return { onSignal, domRaw, confirm, tick };
+    // A record the previous page in this tab left unfinished, whose reply this page can still
+    // see running (spec §11, refresh). It is measured on from here under the new localId.
+    function adopt(localId, rec, t) {
+      const r = { ...structuredClone(rec), outcome: 'unknown', lastSeen: t };
+      delete r.closedAt;
+      if (!r.flags.includes('resumed')) r.flags = [...r.flags, 'resumed'];
+      open.set(localId, r);
+      write(r);
+    }
+
+    return { onSignal, domRaw, confirm, tick, adopt };
   };
 })(globalThis);

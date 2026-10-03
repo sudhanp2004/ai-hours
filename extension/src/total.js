@@ -7,16 +7,24 @@
   // a browser that quit or crashed announces nothing, so liveness has to expire.
   const LIVE_STALE_MS = 30 * 1000;
 
+  // The time a reply was seen working, up to its last sign of life. A reply that lost its tab
+  // (refresh, close, quit) keeps this much: measured, never guessed (changed 2026-10-03).
+  const watched = (r) => Math.max(0, (r.lastSeen ?? r.start) - r.start);
+
   ns.summarize = function summarize(records, now) {
     let totalMs = 0;
-    let unknown = 0;
+    let partial = 0;
     for (const r of records) {
       // A recovered record's duration is a span of two clocks, so it can't be end - start.
       if (r.recovered) totalMs += Math.max(0, r.recovered.durationMs);
       else if (r.end != null) totalMs += Math.max(0, r.end - r.start);
-      else if (now - r.start > IN_PROGRESS_MS) unknown++;
+      else {
+        totalMs += watched(r);
+        // Past an hour it is not still running: only the watched part of it was counted.
+        if (now - r.start > IN_PROGRESS_MS) partial++;
+      }
     }
-    return { totalMs, unknown };
+    return { totalMs, partial };
   };
 
   // What one record adds to the live count right now: null if nothing, else its ms and
@@ -24,9 +32,9 @@
   function liveShare(r, now) {
     if (r.recovered) return { ms: Math.max(0, r.recovered.durationMs), live: false };
     if (r.end != null) return { ms: Math.max(0, r.end - r.start), live: false };
-    // A pending record's tab is gone: we can no longer see the work, so we don't count it.
-    if (r.outcome === 'pending') return null;
-    if (now - (r.lastSeen ?? r.start) > LIVE_STALE_MS) return null;
+    // A pending record's tab is gone, and a silent one's browser may be: neither can be
+    // watched any further, so each keeps what was watched and gains nothing more.
+    if (r.outcome === 'pending' || now - (r.lastSeen ?? r.start) > LIVE_STALE_MS) return { ms: watched(r), live: false };
     return { ms: Math.max(0, now - r.start), live: true };
   }
 
@@ -51,7 +59,7 @@
     let working = 0;
     for (const r of records) {
       const s = liveShare(r, now);
-      if (!s) continue;
+      if (!s || (!s.ms && !s.live)) continue; // nothing to show for it
       const site = r.site || 'chatgpt';
       const model = r.server?.model ?? null;
       let row = sites.get(site);

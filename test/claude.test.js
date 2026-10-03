@@ -73,6 +73,17 @@ test('timeline: a corrupt frame is skipped, not fatal', async () => {
   assert.deepEqual(seen, ['running']);
 });
 
+// Status messages come at the start and end of a reply; between them only text deltas and
+// heartbeats arrive. Each is a sign the stream is alive, or a long reply would go stale.
+test('timeline: every data frame is activity, the trailer is not', async () => {
+  let n = 0;
+  const dec = site.createTimelineDecoder(() => {}, () => n++);
+  for (const f of [pb.statusFrame(CONV, 2), pb.deltaFrame(SECRET), pb.heartbeat()]) dec.push(new Uint8Array(pb.env(0, f)));
+  dec.push(new Uint8Array(pb.env(2, [...Buffer.from('{}')])));
+  await dec.idle();
+  assert.equal(n, 3);
+});
+
 test('an unknown status value after running counts as not running', async () => {
   const seen = await feed([pb.env(0, pb.statusFrame(CONV, 2)), pb.env(0, pb.statusFrame(CONV, 7))]);
   assert.deepEqual(seen, ['running', 'idle']);

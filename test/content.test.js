@@ -277,7 +277,51 @@ test('an orphaned record stops counting live immediately', async () => {
   const { context, store } = setup({ stored });
   await settle();
   assert.equal(store['rec:old'].outcome, 'pending', 'the orphan was closed');
-  assert.equal(inContext(context, '__aiHours.liveTotal(records, now).ms', { records: Object.values(store), now: T0 }), 0);
+  // Spread out of the sandbox: its objects have another realm's Object prototype.
+  const total = (now) => ({ ...inContext(context, '__aiHours.liveTotal(records, now)', { records: Object.values(store), now }) });
+  assert.deepEqual(total(T0), { ms: 59000, working: 0 }, 'what was watched stays, so a refresh never lowers the total');
+  assert.deepEqual(total(T0 + 60000), { ms: 59000, working: 0 }, 'and it gains nothing more');
+});
+
+// A refresh mid-reply on claude.ai: the server keeps generating, and the new page's timeline
+// says so. The new page takes over the old page's record and finishes it on the same clock.
+test('a reply still running after a refresh is adopted by the new page and finished there', async () => {
+  const stored = { 'rec:old': rec({ id: 'old', tabId: 7, start: T0 - 20000, lastSeen: T0 - 1000, server: { model: 'claude-opus-5-5' } }) };
+  const { context, store, send } = setup({ stored });
+  await settle();
+  assert.equal(store['rec:old'].outcome, 'pending');
+  send(context, { type: 'resume', localId: 'L2', t: T0 + 500 });
+  await settle();
+  assert.equal(store['rec:old'].outcome, 'unknown', 'counting live again');
+  assert.equal(store['rec:old'].lastSeen, T0 + 500);
+  assert.ok(store['rec:old'].flags.includes('resumed'));
+  assert.equal(store['rec:old'].closedAt, undefined);
+  send(context, { type: 'end', localId: 'L2', t: T0 + 9000, lastChunk: T0 + 9000, outcome: 'completed' });
+  await settle();
+  assert.equal(store['rec:old'].end, T0 + 9000);
+  assert.equal(store['rec:old'].outcome, 'completed');
+  assert.equal(store['rec:old'].server.model, 'claude-opus-5-5', 'its server facts survive the takeover');
+});
+
+test('a resume with no orphan from this tab adopts nothing: that reply was sent elsewhere', async () => {
+  const stored = { 'rec:other': rec({ id: 'other', tabId: 9, start: T0 - 20000, lastSeen: T0 - 1000 }) };
+  const { context, store, sent, send } = setup({ stored });
+  await settle();
+  send(context, { type: 'resume', localId: 'L2', t: T0 + 500 });
+  send(context, { type: 'end', localId: 'L2', t: T0 + 9000, lastChunk: T0 + 9000, outcome: 'completed' });
+  await settle();
+  assert.deepEqual(Object.keys(store), ['rec:other']);
+  assert.equal(store['rec:other'].outcome, 'unknown');
+  assert.deepEqual(sent, []);
+});
+
+test('an orphan is adopted once, and only if its last sign of life was minutes ago, not hours', async () => {
+  const stored = { 'rec:old': rec({ id: 'old', tabId: 7, start: T0 - 3 * 3600e3, lastSeen: T0 - 2 * 3600e3 }) };
+  const { context, store, send } = setup({ stored });
+  await settle();
+  send(context, { type: 'resume', localId: 'L2', t: T0 });
+  await settle();
+  assert.equal(store['rec:old'].outcome, 'pending', 'too old to be the reply now running');
 });
 
 test('no tab id means no orphan cleanup, and nothing is invented', async () => {
