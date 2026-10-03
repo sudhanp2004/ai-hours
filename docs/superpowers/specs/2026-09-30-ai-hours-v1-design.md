@@ -224,7 +224,7 @@ ChatGPT keeps generating after the tab is gone and saves the finished reply. So 
 
 ## 8. Privacy & permissions
 
-- `host_permissions`: the enabled sites only (§11) — currently `https://chatgpt.com/*` and `https://www.perplexity.ai/*`. `permissions`: `storage`, `unlimitedStorage` (no install warning), `scripting`.
+- `host_permissions`: the enabled sites only (§11) — currently `https://chatgpt.com/*`, `https://www.perplexity.ai/*`, `https://claude.ai/*` and `https://gemini.google.com/*`. `permissions`: `storage`, `unlimitedStorage` (no install warning), `scripting`.
 - Stream text necessarily passes through the decoder in memory. Only the structural signals listed in §4 leave `parseEvent`. Nothing leaves the device.
 - `window.postMessage` is visible to the page, so the page could forge signals. That's acceptable for local-only v1. It becomes the anti-cheat problem (handoff §9.6) if a server is added.
 - Adding a site is a privacy decision as much as a technical one: the install warning's site list grows with every adapter. A stub that isn't in the manifest adds nothing to it.
@@ -319,8 +319,8 @@ Six facts, all from one DevTools paste (`spike/multisite-probe.js`):
 | Site | Adapter | Live counting | Closed-tab recovery | In manifest |
 |---|---|---|---|---|
 | chatgpt.com | written, verified 2026-09-30 | yes | yes (⚑7a–c still unconfirmed) | yes |
-| gemini.google.com | stub; probed 2026-10-03 (below) | not yet | not yet | no |
-| claude.ai | stub; probed 2026-10-03 (below) | not yet | not yet | no |
+| gemini.google.com | written 2026-10-03 from the probe (below) | yes, not yet run end to end | no: the loaded chat has no end time | yes |
+| claude.ai | written 2026-10-03 from the probe (below) | yes, not yet run end to end | no: no passive JSON load (decided 2026-10-03) | yes |
 | perplexity.ai | written 2026-10-03 from the probe (below) | yes, not yet run end to end | yes (⚑9a–c unconfirmed) | yes |
 | copilot.microsoft.com | stub | not yet | not yet | no |
 | grok.com | stub | not yet | not yet | no |
@@ -452,6 +452,25 @@ Shared-code changes this needed: `main-world.js` ends a stream that errors *afte
 event as `completed`; `reconcile.js` takes `max(watched, server span)` instead of the sum when a
 turn says `startIsSend` (Perplexity's span already includes the watched part). The pill's
 position was tuned for ChatGPT's header and is untested on Perplexity.
+
+**Claude and Gemini enabled 2026-10-03 (user decision), without closed-tab recovery.** ⚑8 was
+built as two more reply shapes in `main-world.js` rather than a frame-splitter seam:
+- **XHR** (Gemini): `XMLHttpRequest.prototype.open/send` are wrapped; a reply is timed from
+  `send` to `loadend` (2xx = completed, else error), and `progress` gives first byte and alive.
+  `matchQuery: true` makes URL patterns see the query, where Gemini names its rpc (`NkpXw`).
+- **Timeline** (claude.ai): `requestKind(path, body)` reads the PerformAction's top-level field
+  (2 = send, 3 = stop); `createTimelineDecoder` splits Connect envelopes, gunzips flag-1 frames
+  and reports `running`/`idle` from status field 1.1.2.3. The reply ends on the first idle after
+  running, on whichever timeline stream is open (they rotate). A reply never seen to go idle
+  is closed off as `error`, with no duration, by the next send.
+
+Built but not yet seen working end to end:
+
+| ⚑ | Assumption | If wrong |
+|---|---|---|
+| ⚑10a | claude.ai's field numbers (send 2, stop 3, status 1.1.2.3) stay as observed in one session | sends go unseen (nothing counted) or never end (closed off at the next send as error; the live pill counts it at most until the 30 s staleness cutoff). An undercount in the stored total, never an overcount |
+| ⚑10b | Gemini's page calls `XMLHttpRequest.prototype.send` (Closure's XhrIo does) | nothing counted on Gemini |
+| ⚑10c | The pill's position (tuned for ChatGPT's header) doesn't cover controls on claude.ai or Gemini | cosmetic |
 
 **Clock skew seen on this machine (2026-10-03):** Perplexity's server timestamps ran a steady
 ~4.8 s ahead of the client clock (created − send = 4.81–4.86 s on all three turns). Never mix a

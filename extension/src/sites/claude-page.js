@@ -1,12 +1,12 @@
-// claude page config (ISOLATED world). STUB — not yet verified, so not in the manifest.
-// Fill in from spike/site-probe.js, then flip verified to true and add this site to
-// manifest.json (both halves, one entry each) in the same commit.
+// claude.ai page config (ISOLATED world). Selector verified in DevTools on 2026-10-03.
+// The network half lives in claude-network.js.
 (function (root) {
   const ns = (root.__aiHours = root.__aiHours || {});
   ns.site = Object.assign(ns.site || {}, {
-    verified: false,          // flip to true only after the probe confirms the selector
+    verified: true,
     hosts: ['claude.ai'],
     site: 'claude',
-    stopButton: null,         // TODO(probe fact 5): a stable selector, e.g. 'button[data-testid="…"]'
+    // aria-label "Stop response"; the test id is not localized, so it is the one to use.
+    stopButton: 'button[data-testid="chat-input-stop"]',
   });
 })(globalThis);

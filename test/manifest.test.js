@@ -97,9 +97,14 @@ test('every enabled entry is self-sufficient, and its adapter is verified', () =
     const main = load(s.js.slice(0, -1));
     assert.equal(typeof main.createSseParser, 'function', `${s.matches} MAIN: sse.js`);
     assert.equal(main.site.verified, true, `${s.matches} MAIN: adapter is marked verified`);
-    assert.equal(typeof main.site.streamUrl?.test, 'function', `${s.matches} MAIN: streamUrl`);
-    assert.equal(typeof main.site.parseEvent, 'function', `${s.matches} MAIN: parseEvent`);
-    assert.equal(typeof main.site.sendIds, 'function', `${s.matches} MAIN: sendIds`);
+    // Each site declares exactly one complete reply shape (main-world.js header).
+    const a = main.site;
+    const sse = typeof a.streamUrl?.test === 'function' && typeof a.parseEvent === 'function';
+    const xhr = typeof a.streamUrl?.test === 'function' && a.parseEvent == null; // timed by the request itself
+    const timeline = typeof a.requestKind === 'function' && typeof a.timelineUrl?.test === 'function' && typeof a.createTimelineDecoder === 'function';
+    assert.equal([sse, xhr, timeline].filter(Boolean).length, 1, `${s.matches} MAIN: one complete reply shape`);
+    // Recovery is optional, but all-or-nothing: a URL without its parser would read nothing.
+    assert.equal(a.conversationUrl == null, a.parseConversation == null, `${s.matches} MAIN: recovery pieces`);
   }
   for (const cs of manifest.content_scripts.filter((c) => (c.world || 'ISOLATED') !== 'MAIN')) {
     const iso = load(cs.js.slice(0, -1));

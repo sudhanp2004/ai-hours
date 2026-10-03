@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Hours",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Counts how long AI has worked for you. Records when AI works, never what was said.",
   "icons": {
     "16": "icons/icon16.png",
@@ -16,7 +16,9 @@
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
-    "https://www.perplexity.ai/*"
+    "https://www.perplexity.ai/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*"
   ],
   "background": {
     "service_worker": "src/background.js",
@@ -76,6 +78,60 @@
       ],
       "js": [
         "src/sites/perplexity-page.js",
+        "src/verify.js",
+        "src/reconcile.js",
+        "src/tracker.js",
+        "src/total.js",
+        "src/overlay.js",
+        "src/content.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "src/sse.js",
+        "src/sites/claude-network.js",
+        "src/main-world.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "src/sites/claude-page.js",
+        "src/verify.js",
+        "src/reconcile.js",
+        "src/tracker.js",
+        "src/total.js",
+        "src/overlay.js",
+        "src/content.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "src/sse.js",
+        "src/sites/gemini-network.js",
+        "src/main-world.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "src/sites/gemini-page.js",
         "src/verify.js",
         "src/reconcile.js",
         "src/tracker.js",

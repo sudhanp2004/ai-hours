@@ -1,23 +1,21 @@
-// gemini network config (MAIN world). STUB — not yet verified, so not in the manifest.
-// Fill in from spike/site-probe.js, then flip verified to true and add this site to
-// manifest.json (both halves, one entry each) in the same commit.
+// Gemini network config (MAIN world). Verified in DevTools on 2026-10-03 (spec §11, Probe
+// results). The reply is one XMLHttpRequest (not fetch), timed by its own start and end, so
+// no frame is ever parsed and no text is ever read. Stop is a batchexecute call whose rpc id
+// is in the query string, so URLs here are matched with their query.
+// The page-side half lives in gemini-page.js: a file can't be listed in both worlds.
 (function (root) {
   const ns = (root.__aiHours = root.__aiHours || {});
   ns.site = Object.assign(ns.site || {}, {
-    verified: false,          // flip to true only after the probe confirms the endpoints
-    // TODO(probe fact 2): regex for the chat stream URL, e.g. /\/stream\/generate$/
-    streamUrl: null,
-    // TODO(probe fact 4): regex for the stop request, if the site issues one
-    stopUrl: null,
-    // TODO(probe fact 6): regex for the conversation-load URL, or null if chats load
-    // from memory (which means no closed-tab recovery on this site — see spec §11)
+    verified: true,
+    matchQuery: true,
+    streamUrl: /^\/_\/BardChatUi\/data\/assistant\.lamda\.BardFrontendService\/StreamGenerate(?:\?|$)/,
+    // rpcids may list several ids, comma-separated (%2C once encoded).
+    stopUrl: /^\/_\/BardChatUi\/data\/batchexecute\?(?:.*&)?rpcids=(?:[^&]*(?:,|%2C))?NkpXw(?:,|%2C|&|$)/,
+    // The loaded chat (rpc hNvQHb) has one timestamp per turn, the send, and no end. With
+    // nothing honest to recover from, a reply whose tab closed stays unknown (spec §11).
     conversationUrl: null,
-    // TODO(probe fact 3): SSE → Signal | null. Reuse the shape from chatgpt-network.js.
-    // If the stream is not SSE, stop here and read spec ⚑8 before writing this.
     parseEvent: null,
-    // TODO(probe fact 1): read the two ids out of the send body, ids only, never text
-    sendIds: null,
-    // TODO(probe fact 6): loaded conversation JSON → Turn[]. Reuse turnFor's shape.
+    sendIds: null, // the send body is the prompt itself; nothing in it is worth the risk
     parseConversation: null,
   });
 })(globalThis);

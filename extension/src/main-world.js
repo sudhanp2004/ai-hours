@@ -1,5 +1,10 @@
-// Runs in the page's MAIN world at document_start. Wraps fetch to time chat streams and
-// posts structural signals to content.js. Never posts message text.
+// Runs in the page's MAIN world at document_start. Wraps fetch and XMLHttpRequest to time
+// chat replies and posts structural signals to content.js. Never posts message text.
+// Three shapes of reply, chosen by what the adapter declares (spec §11):
+//   streamUrl   — one request whose response is the reply (fetch+SSE: ChatGPT, Perplexity;
+//                 XHR: Gemini, timed by the request's own start and end),
+//   requestKind + timelineUrl — a send request, with progress on a separate long-lived
+//                 stream that reports running/idle (claude.ai).
 (function () {
   // The flag lives on window, not on fetch: something else may wrap fetch after us, and a
   // re-injection after an extension update must still see that we're already installed.
@@ -14,10 +19,13 @@
   // each one becomes a storage write there, so it is throttled well above the chunk rate.
   const aliveEvery = () => ns().site?.aliveEveryMs ?? 2000;
 
+  // Same-origin path only. An adapter whose requests are named in the query (Gemini's rpc
+  // ids) asks for the query too.
   function pathOf(input) {
     try {
       const u = new URL(input instanceof Request ? input.url : String(input), location.href);
-      return u.origin === location.origin ? u.pathname : '';
+      if (u.origin !== location.origin) return '';
+      return ns().site?.matchQuery ? u.pathname + u.search : u.pathname;
     } catch {
       return '';
     }
@@ -27,7 +35,10 @@
     const site = ns().site;
     if (!site) return origFetch.apply(window, arguments);
     const path = pathOf(input);
-    if (site.stopUrl?.test(path)) post('stop', { t: Date.now() });
+    const kind = site.requestKind?.(path, init?.body) ?? null;
+    if (kind === 'stop' || site.stopUrl?.test(path)) post('stop', { t: Date.now() });
+    if (kind === 'send') return trackSend(arguments);
+    if (site.timelineUrl?.test(path)) return readTimeline(arguments);
     if (site.conversationUrl && site.conversationUrl.test(path)) return readConversation(path, arguments);
     if (!site.streamUrl?.test(path)) return origFetch.apply(window, arguments);
 
@@ -48,6 +59,113 @@
     return res;
   }
   window.fetch = wrappedFetch;
+
+  // ---- claude.ai: a send request, then running/idle from a long-lived timeline stream.
+  // One reply runs at a time per page; the timeline may be any of several streams over the
+  // reply's life, because the server closes and the page reopens it every few minutes.
+  let reply = null; // {localId, running, lastAlive}
+
+  async function trackSend(args) {
+    const localId = crypto.randomUUID();
+    const t = Date.now();
+    // A previous reply never seen to go idle (its timeline opened before we were injected)
+    // is closed off at its last sign of life: an error, never a guessed duration.
+    if (reply) post('end', { localId: reply.localId, t, lastChunk: reply.running ? reply.lastAlive : reply.start, outcome: 'error' });
+    reply = { localId, start: t, running: false, lastAlive: 0 };
+    post('start', { localId, t, sent: null });
+    let res;
+    try {
+      res = await origFetch.apply(window, args);
+    } catch (e) {
+      failReply(localId);
+      throw e;
+    }
+    if (!res.ok) failReply(localId);
+    return res;
+  }
+
+  function failReply(localId) {
+    if (reply?.localId !== localId) return;
+    reply = null;
+    post('end', { localId, t: Date.now(), lastChunk: null, outcome: 'error' });
+  }
+
+  function onStatus(status) {
+    const r = reply;
+    if (!r) return;
+    const t = Date.now();
+    if (status === 'running') {
+      if (!r.running) (r.running = true), (r.lastAlive = t), post('firstByte', { localId: r.localId, t });
+      else if (t - r.lastAlive >= aliveEvery()) (r.lastAlive = t), post('alive', { localId: r.localId, t });
+    } else if (r.running) {
+      // Idle before running is the server echoing the state the send found; only idle
+      // after running ends the reply.
+      reply = null;
+      post('end', { localId: r.localId, t, lastChunk: t, outcome: 'completed' });
+    }
+  }
+
+  async function readTimeline(args) {
+    const res = await origFetch.apply(window, args);
+    try {
+      if (!res.ok || !res.body) return res;
+      const decoder = ns().site.createTimelineDecoder(onStatus);
+      const reader = res.clone().body.getReader();
+      (async () => {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) return;
+          decoder.push(value);
+        }
+      })().catch(() => {}); // a rotated or aborted stream just stops reporting
+    } catch {
+      // Never disturb the page's own request.
+    }
+    return res;
+  }
+
+  // ---- XMLHttpRequest (Gemini): the reply is one XHR, so its own start and end time it.
+  const XHR = window.XMLHttpRequest?.prototype;
+  if (XHR) {
+    const URL_KEY = Symbol('aiHours.xhrUrl');
+    const origOpen = XHR.open;
+    const origSend = XHR.send;
+    XHR.open = function (method, url) {
+      this[URL_KEY] = url;
+      return origOpen.apply(this, arguments);
+    };
+    XHR.send = function () {
+      try {
+        watchXhr(this, pathOf(this[URL_KEY]));
+      } catch {
+        // Never disturb the page's own request.
+      }
+      return origSend.apply(this, arguments);
+    };
+  }
+
+  function watchXhr(xhr, path) {
+    const site = ns().site;
+    if (!site || !path) return;
+    if (site.stopUrl?.test(path)) post('stop', { t: Date.now() });
+    if (!site.streamUrl?.test(path)) return;
+    const localId = crypto.randomUUID();
+    post('start', { localId, t: Date.now(), sent: null });
+    let lastChunk = null;
+    let lastAlive = 0;
+    xhr.addEventListener('progress', () => {
+      const t = Date.now();
+      if (lastChunk === null) post('firstByte', { localId, t }), (lastAlive = t);
+      else if (t - lastAlive >= aliveEvery()) post('alive', { localId, t }), (lastAlive = t);
+      lastChunk = t;
+    });
+    // loadend fires once, after load, error, abort or timeout. Status 0 is an abort or a
+    // network failure; a finished reply is a 2xx.
+    xhr.addEventListener('loadend', () => {
+      const ok = xhr.status >= 200 && xhr.status < 300;
+      post('end', { localId, t: Date.now(), lastChunk, outcome: ok ? 'completed' : 'error' });
+    });
+  }
 
   async function readStream(localId, res) {
     const { site, createSseParser } = ns();

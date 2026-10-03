@@ -14,10 +14,15 @@ storage: there is no server, no account and no analytics.
 |---|---|---|
 | chatgpt.com | yes | recovered when you reopen the chat |
 | perplexity.ai | yes (new, not yet tested end to end) | recovered when you reopen the thread |
+| claude.ai | yes (new, not yet tested end to end) | counted as unknown |
+| gemini.google.com | yes (new, not yet tested end to end) | counted as unknown |
+
+"Counted as unknown" means a reply whose tab you closed mid-way is not added to your total:
+Claude and Gemini don't save an end time we can read back, and AI Hours never guesses. The
+popup shows how many replies were unknown.
 
 A site is only added once its network behaviour has been checked by hand, so the number stays
-honest. Claude, Gemini, Copilot, Grok, DeepSeek and You.com have placeholder adapters but are
-**not** enabled.
+honest. Copilot, Grok, DeepSeek and You.com have placeholder adapters but are **not** enabled.
 
 ## Install (no Chrome Web Store)
 
@@ -27,7 +32,7 @@ honest. Claude, Gemini, Copilot, Grok, DeepSeek and You.com have placeholder ada
 3. Turn on **Developer mode** (top right).
 4. Click **Load unpacked** and choose the `extension` folder inside the download (the one that
    contains `manifest.json`).
-5. Open ChatGPT or Perplexity and send a message. A small counter appears at the top right,
+5. Open ChatGPT, Perplexity, Claude or Gemini and send a message. A small counter appears at the top right,
    and clicking the AI Hours toolbar icon (pin it from the puzzle-piece menu) shows your total.
 
 Chrome may show a "Disable developer mode extensions" notice when it starts. That is normal for
