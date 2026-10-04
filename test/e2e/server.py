@@ -1,12 +1,15 @@
 import http.server, ssl, time, json, sys
 PAGE = b"""<!doctype html><html><head><meta charset=utf-8><title>fake chatgpt</title></head><body>
-<button data-testid="stop-button" id="stop" style="display:none">stop</button>
 <script>
+// Like the real site: the stop button is inserted while a reply streams and removed after.
 async function ask() {
-  document.getElementById('stop').style.display = '';
+  const b = document.createElement('button');
+  b.setAttribute('data-testid', 'stop-button');
+  b.textContent = 'stop';
+  document.body.appendChild(b);
   const r = await fetch('/backend-api/f/conversation', { method: 'POST', body: JSON.stringify({ conversation_id: null, messages: [{ id: 'u1', author: { role: 'user' } }] }) });
   await r.text();
-  document.getElementById('stop').style.display = 'none';
+  b.remove();
   document.title = 'done';
 }
 setTimeout(ask, 1500);

@@ -14,7 +14,11 @@
 
   let tabId = null;
   const records = new Map(); // storage key -> record
-  let savedMs = null; // null until storage has been read, so we never show a partial total
+  // The running totals, kept incrementally so a tick costs the replies in flight, not the
+  // whole history. `loaded` stays false until storage has been read, so we never show a
+  // partial total.
+  const ledger = ns.createLedger();
+  let loaded = false;
   let tracker = null;
 
   // The worker replies with sender.tab.id, so it has to be asked once per page.
@@ -167,14 +171,26 @@
     tracker.adopt(localId, rec, t);
   }
 
+  // Chat pages change the DOM many times a second while a reply streams, so the stop-button
+  // lookup runs at most once per CHECK_MS, not once per change. A change is stamped with the
+  // time of the first mutation in its batch, so batching delays the check, never the time.
+  const CHECK_MS = 100;
   let lastVisible = false;
-  const observer = new MutationObserver(() => {
+  let pendingSince = null;
+  function checkStopButton() {
+    const since = pendingSince;
+    pendingSince = null;
     const visible = !!document.querySelector(site.stopButton);
     if (visible === lastVisible) return;
     lastVisible = visible;
-    tracker?.domRaw(visible, Date.now());
+    tracker?.domRaw(visible, since);
     // Times come from domRaw, so throttled timers in background tabs only delay, never skew.
     setTimeout(() => tracker?.confirm(Date.now()), 350);
+  }
+  const observer = new MutationObserver(() => {
+    if (pendingSince !== null) return;
+    pendingSince = Date.now();
+    setTimeout(checkStopButton, CHECK_MS);
   });
 
   if (document.readyState === 'loading') {
@@ -195,21 +211,16 @@
   let ticker = null;
 
   function remember(key, rec) {
-    if (rec) records.set(key, rec);
-    else records.delete(key);
-    if (savedMs !== null) recompute();
-  }
-
-  function recompute() {
-    savedMs = ns.summarize([...records.values()], Date.now()).totalMs;
+    if (rec) records.set(key, rec), ledger.set(key, rec, Date.now());
+    else records.delete(key), ledger.delete(key);
   }
 
   function render() {
-    if (savedMs === null) return;
+    if (!loaded) return;
     // Every tab's open replies, not just this one's: two tabs working means the count
     // genuinely moves twice as fast, and ×N says so (spec §6b).
-    const { ms, working } = ns.liveTotal([...records.values()], Date.now());
-    overlay.render(ms, working, () => ns.breakdown([...records.values()], Date.now()));
+    const { ms, working } = ledger.live(Date.now());
+    overlay.render(ms, working, () => ledger.breakdown(Date.now()));
   }
 
   function onStorage(changes, area) {
@@ -230,8 +241,8 @@
     tabId = id;
     const all = await chrome.storage.local.get(null);
     // A record written while this read was in flight is newer than the stored copy.
-    for (const key of Object.keys(all)) if (key.startsWith('rec:') && !records.has(key)) records.set(key, all[key]);
-    recompute();
+    for (const key of Object.keys(all)) if (key.startsWith('rec:') && !records.has(key)) remember(key, all[key]);
+    loaded = true;
     render();
 
     tracker = buildTracker();

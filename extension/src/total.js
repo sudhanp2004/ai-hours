@@ -95,6 +95,112 @@
     };
   };
 
+  // The same count as liveTotal and breakdown, kept incrementally for the pill, which asks
+  // every second. A finished record's share never changes, so it is added once when stored
+  // and taken back out only if the record is rewritten. Each tick then looks only at the few
+  // records that can still be gaining time ("active"); one that has gone stale is settled
+  // at its watched time, since only a new write (set) can bring it back.
+  ns.createLedger = function createLedger() {
+    const settled = new Map(); // key -> {site, model, ms}, for records whose share is final
+    const active = new Map(); // key -> record that may still be live
+    const sums = new Map(); // site -> {ms, n, models: Map(model -> {ms, n})}
+    let total = 0;
+
+    function addSettled(key, site, model, ms) {
+      if (!ms) return; // nothing to show for it, the same rule breakdown applies
+      settled.set(key, { site, model, ms });
+      total += ms;
+      let row = sums.get(site);
+      if (!row) sums.set(site, (row = { ms: 0, n: 0, models: new Map() }));
+      let m = row.models.get(model);
+      if (!m) row.models.set(model, (m = { ms: 0, n: 0 }));
+      row.ms += ms, row.n++, m.ms += ms, m.n++;
+    }
+
+    function removeSettled(key) {
+      const s = settled.get(key);
+      if (!s) return;
+      settled.delete(key);
+      total -= s.ms;
+      const row = sums.get(s.site);
+      const m = row.models.get(s.model);
+      row.ms -= s.ms, row.n--, m.ms -= s.ms, m.n--;
+      if (!m.n) row.models.delete(s.model);
+      if (!row.n) sums.delete(s.site);
+    }
+
+    // Where a record belongs right now: settled at a final share, active, or nowhere.
+    function place(key, r, now) {
+      const share = liveShare(r, now);
+      if (!share) {
+        // Invalid only because it starts in the future: time may make it valid.
+        if (r && typeof r === 'object' && num(r.start) && r.start > now + 60 * 1000) active.set(key, r);
+        return;
+      }
+      if (share.live || (r.end == null && !r.recovered && r.outcome !== 'pending' && r.start > now)) active.set(key, r);
+      else addSettled(key, r.site || 'chatgpt', r.server?.model ?? null, share.ms);
+    }
+
+    function set(key, r, now) {
+      removeSettled(key);
+      active.delete(key);
+      place(key, r, now);
+    }
+
+    function remove(key) {
+      removeSettled(key);
+      active.delete(key);
+    }
+
+    // Shares of the active records at `now`; any that turned final are settled as we go.
+    function activeShares(now) {
+      const out = [];
+      for (const [key, r] of active) {
+        const s = liveShare(r, now);
+        if (s && s.live) out.push({ r, s });
+        else if (s || !(num(r.start) && r.start > now + 60 * 1000)) (active.delete(key), place(key, r, now));
+      }
+      return out;
+    }
+
+    // activeShares runs first: it may settle records, which changes the settled sums.
+    function live(now) {
+      const shares = activeShares(now);
+      let ms = total;
+      for (const { s } of shares) ms += s.ms;
+      return { ms, working: shares.length };
+    }
+
+    function breakdown(now) {
+      const shares = activeShares(now);
+      const sites = new Map();
+      for (const [site, row] of sums) {
+        const models = new Map();
+        for (const [model, m] of row.models) models.set(model, { model, ms: m.ms, working: 0 });
+        sites.set(site, { site, ms: row.ms, working: 0, models });
+      }
+      let ms = total;
+      let working = 0;
+      for (const { r, s } of shares) {
+        const site = r.site || 'chatgpt';
+        const model = r.server?.model ?? null;
+        let row = sites.get(site);
+        if (!row) sites.set(site, (row = { site, ms: 0, working: 0, models: new Map() }));
+        let m = row.models.get(model);
+        if (!m) row.models.set(model, (m = { model, ms: 0, working: 0 }));
+        ms += s.ms, working++, row.ms += s.ms, row.working++, m.ms += s.ms, m.working++;
+      }
+      const byMs = (a, b) => b.ms - a.ms;
+      return {
+        ms,
+        working,
+        sites: [...sites.values()].map((row) => ({ ...row, models: [...row.models.values()].sort(byMs) })).sort(byMs),
+      };
+    }
+
+    return { set, delete: remove, live, breakdown, activeCount: () => active.size };
+  };
+
   ns.hasRecentHealthFlags = (records, now) =>
     records.some((r) => r.flags?.length > 0 && now - r.start < HEALTH_WINDOW_MS);
 

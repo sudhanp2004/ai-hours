@@ -37,9 +37,10 @@ async function staleMark() {
   return found;
 }
 const count = async () => JSON.parse((await send('Runtime.evaluate', { expression: 'chrome.storage.local.get(null).then(a => JSON.stringify(Object.keys(a).filter(k => k.startsWith("rec:")).length))', awaitPromise: true }, swS)).result.result.value);
-const ask = async () => { await send('Runtime.evaluate', { expression: 'document.title="x"; ask()' }, ps); await sleep(5000); };
+const ask = async () => { await send('Runtime.evaluate', { expression: 'document.title="x"; ask()' }, ps); await sleep(6000); };
 const first = JSON.parse(st.result.result.value);
 if (first.length !== 1 || first[0].outcome !== 'completed' || first[0].model !== 'gpt-5') { console.log('FAIL: the first reply must be recorded, completed, with its model'); process.exit(1); }
+if (first[0].flags.length) { console.log('FAIL: the stop button must be seen and paired (flags: ' + first[0].flags + ')'); process.exit(1); }
 console.log('after first reply:', await count());
 // Reload the extension the way the ↻ button does: reinstall from the same path.
 const re = await send('Extensions.loadUnpacked', { path: EXT });

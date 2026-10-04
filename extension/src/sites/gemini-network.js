@@ -12,16 +12,17 @@
   const MODEL = /\b(\d+(?:\.\d+)? (?:Flash|Pro|Ultra|Nano)(?:[- ](?:Lite|Thinking|Preview|Experimental))*)\b/;
   const SHORT = 40;
 
-  function modelFromResponse(text) {
+  // `state` (optional, one per response) remembers how far the text has been read, so a
+  // caller handing over the growing response on every progress event reads each line once.
+  function modelFromResponse(text, state = {}) {
     if (typeof text !== 'string') return null;
-    let loose = null;
     function walk(v, depth) {
       if (typeof v === 'string') {
         if (v.length > SHORT) return null;
         const m = MODEL.exec(v);
         if (!m) return null;
         if (m[1] === v) return v; // the value is exactly a model name: take it
-        loose = loose ?? m[1]; // a short label around one, kept in case nothing exact turns up
+        state.loose = state.loose ?? m[1]; // a short label around one, kept in case nothing exact turns up
         return null;
       }
       if (!Array.isArray(v) || depth > 64) return null;
@@ -32,13 +33,20 @@
       return null;
     }
     // )]}' then length-prefixed lines, each [["wrb.fr", null, "<JSON as a string>"], ...].
-    for (const line of text.split('\n')) {
-      if (!line.startsWith('[')) continue;
+    // Only lines ending in a newline are complete; the last one may still be arriving.
+    let at = state.offset ?? 0;
+    for (;;) {
+      const nl = text.indexOf('\n', at);
+      if (nl < 0) break;
+      const line = text.slice(at, nl);
+      at = nl + 1;
+      // Parsing is the cost; a line with nothing shaped like a model name can't hold one.
+      if (!line.startsWith('[') || !MODEL.test(line)) continue;
       let outer;
       try {
         outer = JSON.parse(line);
       } catch {
-        continue; // the last line may still be arriving
+        continue;
       }
       for (const e of Array.isArray(outer) ? outer : []) {
         if (!Array.isArray(e) || e[0] !== 'wrb.fr' || typeof e[2] !== 'string') continue;
@@ -49,10 +57,11 @@
           continue;
         }
         const hit = walk(inner, 0);
-        if (hit) return hit;
+        if (hit) return (state.offset = at), hit;
       }
     }
-    return loose;
+    state.offset = at;
+    return state.loose ?? null;
   }
 
   ns.site = Object.assign(ns.site || {}, {

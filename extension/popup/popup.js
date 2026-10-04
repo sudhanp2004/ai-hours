@@ -5,13 +5,14 @@
   document.head.appendChild(style);
 
   const records = new Map();
+  const ledger = ns.createLedger(); // the same incremental count the pill uses
   const all = await chrome.storage.local.get(null);
-  for (const k of Object.keys(all)) if (k.startsWith('rec:')) records.set(k, all[k]);
+  for (const k of Object.keys(all)) if (k.startsWith('rec:')) records.set(k, all[k]), ledger.set(k, all[k], Date.now());
 
   const panel = ns.createBreakdownPanel(document.getElementById('breakdown'));
   // The same live count as the pill, so the two never disagree, ticking while it is open.
   function render() {
-    const data = ns.breakdown([...records.values()], Date.now());
+    const data = ledger.breakdown(Date.now());
     document.getElementById('total').textContent = ns.formatClock(data.ms);
     panel.update(data);
   }
@@ -21,8 +22,8 @@
     if (area !== 'local') return;
     for (const [k, c] of Object.entries(changes)) {
       if (!k.startsWith('rec:')) continue;
-      if (c.newValue) records.set(k, c.newValue);
-      else records.delete(k);
+      if (c.newValue) records.set(k, c.newValue), ledger.set(k, c.newValue, Date.now());
+      else records.delete(k), ledger.delete(k);
     }
     render();
   });

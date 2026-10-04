@@ -45,6 +45,21 @@ test('adapter: the model is the short standalone "3.6 Flash" value, never a ment
   assert.equal(site.modelFromResponse(''), null);
 });
 
+// Called on every progress event with the whole response so far; with a state object it
+// reads only what arrived since the last call, including a line that was cut mid-way.
+test('adapter: incremental reads find the model once, even when it arrives split across calls', () => {
+  const full = stream([null, [['rc_1', [REPLY]]]], [null, '3.6 Flash']);
+  const cut = full.indexOf('3.6 F'); // the model's own line arrives in two pieces
+  const st = {};
+  assert.equal(site.modelFromResponse(full.slice(0, cut), st), null);
+  const consumed = st.offset;
+  assert.ok(consumed > 0 && consumed < cut, 'complete lines are not re-read');
+  assert.equal(site.modelFromResponse(full, st), '3.6 Flash');
+  // A short label seen early is still the fallback when nothing exact turns up later.
+  const st2 = {};
+  assert.equal(site.modelFromResponse(stream([['x', 'Gemini 2.5 Pro']]), st2), '2.5 Pro');
+});
+
 test('adapter: verified URLs, the stop selector, and no recovery', () => {
   assert.equal(site.site, 'gemini');
   assert.deepEqual(site.hosts, ['gemini.google.com']);

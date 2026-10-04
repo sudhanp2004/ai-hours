@@ -1,11 +1,11 @@
-# Chrome Web Store submission: AI Hours 1.0.0
+# Chrome Web Store submission: AI Hours
 
 Everything the developer dashboard asks for, in the order it asks. Copy each block into the
 matching field.
 
 ## Package
 
-Upload `dist/ai-hours-1.0.0.zip` (build it with `npm run package`; it contains only the files
+Upload `dist/ai-hours-<version>.zip` (build it with `npm run package`; it contains only the files
 the extension uses, and `npm run e2e -- <unzipped dir>` checks it works).
 
 ## Store listing tab

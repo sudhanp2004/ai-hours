@@ -52,6 +52,18 @@
   // each one becomes a storage write there, so it is throttled well above the chunk rate.
   const aliveEvery = () => ns().site?.aliveEveryMs ?? 2000;
 
+  // The sign of life a reply sends as data arrives: firstByte once, then alive at most every
+  // aliveEvery() ms. Chunks can come hundreds of times a second, and every post is a storage
+  // write on the other side.
+  function pulse(localId) {
+    let started = false;
+    let lastAlive = 0;
+    return (t) => {
+      if (!started) (started = true), (lastAlive = t), post('firstByte', { localId, t });
+      else if (t - lastAlive >= aliveEvery()) (lastAlive = t), post('alive', { localId, t });
+    };
+  }
+
   // Same-origin path only. An adapter whose requests are named in the query (Gemini's rpc
   // ids) asks for the query too.
   function pathOf(input) {
@@ -200,8 +212,9 @@
     const localId = crypto.randomUUID();
     post('start', { localId, t: Date.now(), sent: null });
     let lastChunk = null;
-    let lastAlive = 0;
+    const beat = pulse(localId);
     let model = null;
+    const modelScan = {}; // how far the response has been read for the model's name
     // Some sites name the model in the request (DeepSeek); read it once, at the send.
     try {
       model = site.modelFromRequest?.(body) ?? null;
@@ -214,17 +227,15 @@
     const findModel = () => {
       if (model || !site.modelFromResponse) return;
       try {
-        model = site.modelFromResponse(xhr.responseText);
+        model = site.modelFromResponse(xhr.responseText, modelScan);
       } catch {
         return;
       }
       if (model) post('message', { localId, sig: { kind: 'message', role: 'assistant', model } });
     };
     xhr.addEventListener('progress', () => {
-      const t = Date.now();
-      if (lastChunk === null) post('firstByte', { localId, t }), (lastAlive = t);
-      else if (t - lastAlive >= aliveEvery()) post('alive', { localId, t }), (lastAlive = t);
-      lastChunk = t;
+      lastChunk = Date.now();
+      beat(lastChunk);
       findModel();
     });
     // loadend fires once, after load, error, abort or timeout. Status 0 is an abort or a
@@ -249,17 +260,13 @@
     });
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    let lastAlive = 0;
+    const beat = pulse(localId);
     try {
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
-        const t = Date.now();
-        if (lastChunk === null) post('firstByte', { localId, t }), (lastAlive = t);
-        // The sign of life other tabs count this reply by. Throttled: chunks can be
-        // hundreds per second, and every post is a storage write on the other side.
-        if (t - lastAlive >= aliveEvery()) post('alive', { localId, t }), (lastAlive = t);
-        lastChunk = t;
+        lastChunk = Date.now();
+        beat(lastChunk);
         parser.push(decoder.decode(value, { stream: true }));
       }
       parser.push(decoder.decode());
