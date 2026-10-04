@@ -16,7 +16,7 @@ storage: there is no server, no account and no analytics.
 | perplexity.ai | yes | recovered when you reopen the thread |
 | claude.ai | yes | the time you watched; if you refresh and it's still running, counted to the end |
 | gemini.google.com | yes | the time you watched |
-| chat.deepseek.com | yes (new) | the time you watched |
+| chat.deepseek.com | yes | the time you watched |
 
 "The time you watched" means a reply whose tab you closed mid-way counts up to the moment you
 stopped seeing it: these sites don't save an end time we can read back, and AI Hours never

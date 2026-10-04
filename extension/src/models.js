@@ -29,8 +29,11 @@
     m = /^gpt-([\w.]+)((?:-[a-z]+)*)$/.exec(slug);
     if (m) return `GPT-${m[1]}${m[2].split('-').filter(Boolean).map((w) => ' ' + cap(w)).join('')}`;
     // deepseek-default, deepseek-default-deepthink (built from DeepSeek's request fields)
-    m = /^deepseek-([\w.]+?)(-deepthink)?$/.exec(slug);
-    if (m) return `DeepSeek${m[1] === 'default' ? '' : ' ' + cap(m[1])}${m[2] ? ' DeepThink' : ''}`;
+    m = /^deepseek-([\w.-]+?)(-deepthink)?$/.exec(slug);
+    if (m) {
+      const type = m[1] === 'default' ? '' : ' ' + m[1].split('-').map(cap).join(' ');
+      return `DeepSeek${type}${m[2] ? ' DeepThink' : ''}`;
+    }
     return slug;
   };
 })(globalThis);

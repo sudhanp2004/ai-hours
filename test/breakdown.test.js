@@ -144,5 +144,7 @@ test('DeepSeek: its request-derived slugs read as the product names', () => {
   assert.equal(modelName('deepseek-default'), 'DeepSeek');
   assert.equal(modelName('deepseek-default-deepthink'), 'DeepSeek DeepThink');
   assert.equal(modelName('deepseek-expert'), 'DeepSeek Expert');
+  assert.equal(modelName('deepseek-v4-flash'), 'DeepSeek V4 Flash', 'a hyphenated model type is read, not shown raw');
+  assert.equal(modelName('deepseek-v4-flash-deepthink'), 'DeepSeek V4 Flash DeepThink');
   assert.deepEqual(siteInfo('deepseek'), { name: 'DeepSeek', recovers: false });
 });

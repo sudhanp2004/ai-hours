@@ -333,13 +333,13 @@ Six facts, all from one DevTools paste (`spike/multisite-probe.js`):
 | Site | Adapter | Live counting | Closed-tab recovery | In manifest |
 |---|---|---|---|---|
 | chatgpt.com | written, verified 2026-09-30 | yes | yes (⚑7a–c still unconfirmed) | yes |
-| gemini.google.com | written 2026-10-03 from the probe (below) | yes, not yet run end to end | no: the loaded chat has no end time | yes |
-| claude.ai | written 2026-10-03 from the probe (below) | yes, not yet run end to end | no: no passive JSON load (decided 2026-10-03) | yes |
-| perplexity.ai | written 2026-10-03 from the probe (below) | yes, not yet run end to end | yes (⚑9a–c unconfirmed) | yes |
+| gemini.google.com | written 2026-10-03 from the probe (below) | yes, verified live by the user 2026-10-04 | no: the loaded chat has no end time | yes |
+| claude.ai | written 2026-10-03 from the probe (below) | yes, verified live by the user 2026-10-04 | no: no passive JSON load (decided 2026-10-03) | yes |
+| perplexity.ai | written 2026-10-03 from the probe (below) | yes, verified live by the user 2026-10-04 | yes (⚑9a–c unconfirmed) | yes |
 | copilot.microsoft.com | stub | not yet | not yet | no |
 | grok.com | stub | not yet | not yet | no |
 | you.com | stub | not yet | not yet | no |
-| chat.deepseek.com | written 2026-10-04 from the probe (below) | yes, not yet run end to end | no: the history load is a cache delta with no messages | yes |
+| chat.deepseek.com | written 2026-10-04 from the probe (below) | yes, verified live by the user 2026-10-04 | no: the history load is a cache delta with no messages | yes |
 
 ### Probe results
 
@@ -522,6 +522,10 @@ Perplexity ever added it back. Now:
 - **Model:** `model_type` (`"default"`) and `thinking_enabled` from the request body, stored as
   `deepseek-default[-deepthink]`, shown "DeepSeek" / "DeepSeek DeepThink". The stream's own
   `model` field was empty. (It also reports `accumulated_token_usage`, unused.)
+
+**Live verification (2026-10-04, by the user):** all five enabled sites counted finished and
+stopped replies; refresh mid-reply kept the count; Claude showed its model names (after a tab
+refresh); edit-and-resend and retry/regenerate were counted on every site.
 
 **Clock skew seen on this machine (2026-10-03):** Perplexity's server timestamps ran a steady
 ~4.8 s ahead of the client clock (created − send = 4.81–4.86 s on all three turns). Never mix a
