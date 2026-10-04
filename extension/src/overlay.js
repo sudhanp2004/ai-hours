@@ -43,6 +43,7 @@
     .total { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
     @keyframes drop { from { opacity: 0; transform: translateY(-4px); } }
     .width { color: var(--live); font-weight: 700; }
+    .stale { color: #c47f00; font-weight: 700; }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--idle); }
     .live .dot { background: var(--live); animation: pulse 1s ease-in-out infinite; }
     @keyframes pulse { 50% { opacity: 0.35; } }
@@ -64,13 +65,15 @@
     shadow.innerHTML =
       `<style>${CSS}${ns.BREAKDOWN_CSS}</style>` +
       '<div class="pill" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false">' +
-      '<span class="dot"></span><span class="time"></span><span class="width"></span></div>' +
+      '<span class="dot"></span><span class="time"></span><span class="width"></span><span class="stale"></span></div>' +
       '<div class="panel" role="dialog" aria-label="AI time by assistant" hidden>' +
       '<div class="head"><span class="label">AI has worked for you</span><span class="total"></span></div>' +
       '<div class="body"></div></div>';
     const pill = shadow.querySelector('.pill');
     const time = shadow.querySelector('.time');
     const width = shadow.querySelector('.width');
+    const staleMark = shadow.querySelector('.stale');
+    let stale = false;
     const panel = shadow.querySelector('.panel');
     const total = shadow.querySelector('.total');
     panel.hidden = true; // also set in the markup; said here too so no state can show it early
@@ -120,9 +123,11 @@
         if (!host.isConnected && doc.body) doc.body.appendChild(host);
         time.textContent = ns.formatClock(ms);
         width.textContent = working > 1 ? `×${working}` : '';
+        staleMark.textContent = stale ? '↻' : '';
         pill.classList.toggle('live', working > 0);
-        pill.title =
-          working > 1
+        pill.title = stale
+          ? 'Refresh this tab to resume counting: AI Hours was updated, and an open tab only reconnects on a refresh'
+          : working > 1
             ? `AI is working ${working} times over for you`
             : working === 1
               ? 'AI is working for you'
@@ -136,6 +141,10 @@
           else show();
         }
         paint();
+      },
+      // This tab could not pair with the page hook, so new replies here are not counted.
+      setStale(next) {
+        stale = next;
       },
       remove() {
         doc.removeEventListener('pointerdown', onPress, true);

@@ -43,7 +43,8 @@ extensions installed this way; click the × to dismiss it.
 
 Extensions loaded this way do not update themselves. Download the new version (or `git pull`),
 then click the ↻ reload icon on the AI Hours card in `chrome://extensions`, and **refresh your
-open chat tabs**: a tab counts new replies again only after a refresh. Your total is kept.
+open chat tabs**: a tab counts new replies again only after a refresh, and its counter shows ↻
+until you do. Your total is kept.
 
 ## The breakdown
 
@@ -77,7 +78,8 @@ it's only as honest as you are. Details: spec §12.
 No build step: the `extension` folder is loaded as is.
 
 ```sh
-npm test   # Node's built-in test runner, no dependencies
+npm test      # Node's built-in test runner, no dependencies
+npm run e2e   # the real extension in headless Chrome against a fake chatgpt.com (needs google-chrome, python3, openssl)
 ```
 
 ## License

@@ -187,6 +187,11 @@
   });
 
   const overlay = ns.createOverlay(document);
+  // Unpaired once the page is past document_start means this tab cannot count new replies
+  // (usually: injected by an extension update into an open tab). Say so on the pill.
+  const checkPaired = () => overlay.setStale(!channel);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', checkPaired, { once: true });
+  else checkPaired();
   let ticker = null;
 
   function remember(key, rec) {

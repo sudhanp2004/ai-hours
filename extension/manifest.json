@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Hours",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Counts how long AI has worked for you. Records when AI works, never what was said.",
   "icons": {
     "16": "icons/icon16.png",

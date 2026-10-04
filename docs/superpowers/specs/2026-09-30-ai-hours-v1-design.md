@@ -565,3 +565,11 @@ already running scripts, and pairing then would let the page answer in the hook'
 that tab stops counting new replies until it is refreshed. Totals still show. Hook changes
 already needed a refresh, so this adds no new step.
 
+**Fixed in 0.7.1:** 0.7.0 left such a tab silently not counting (the user hit it: "the timer
+stopped working"). Before 0.7.0 a reload kept open tabs counting, because the old hook's window
+messages reached the new content script, so the regression was invisible until then. An
+unpaired tab now shows ↻ on its pill, titled "Refresh this tab to resume counting".
+Re-pairing safely without a refresh would need signed messages between the halves; rejected
+as too much machinery for a convenience. `npm run e2e` (test/e2e/) now checks this end to end
+in headless Chrome against a local fake chatgpt.com: the real extension, loaded through CDP.
+

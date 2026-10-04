@@ -160,3 +160,18 @@ test('removing the overlay takes its page listeners with it', () => {
   overlay.remove();
   assert.deepEqual(Object.keys(doc.handlers), []);
 });
+
+// After an extension update an open tab cannot re-pair with the page hook (spec §12), so it
+// stops counting until refreshed. That must be visible, not silent.
+test('a tab that cannot count says so on the pill: refresh to resume', () => {
+  const doc = fakeDoc();
+  doc.body.isConnected = true;
+  const overlay = ns.createOverlay(doc);
+  overlay.setStale(true);
+  overlay.render(5000, 0);
+  assert.equal(doc.parts['.stale'].textContent, '↻');
+  assert.match(doc.parts['.pill'].title, /Refresh this tab/);
+  overlay.setStale(false);
+  overlay.render(5000, 0);
+  assert.equal(doc.parts['.stale'].textContent, '');
+});

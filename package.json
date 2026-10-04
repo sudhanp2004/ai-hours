@@ -1,8 +1,9 @@
 {
   "name": "ai-hours",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.7.1",
   "scripts": {
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"test/*.test.js\"",
+    "e2e": "test/e2e/e2e.sh"
   }
 }
