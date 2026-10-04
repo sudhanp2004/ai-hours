@@ -25,7 +25,11 @@ guesses the rest. The popup says how many replies were only partly counted.
 A site is only added once its network behaviour has been checked by hand, so the number stays
 honest. Copilot, Grok and You.com have placeholder adapters but are **not** enabled.
 
-## Install (no Chrome Web Store)
+## Install
+
+Coming soon to the Chrome Web Store. Until then, install it from this repository:
+
+### From GitHub (Developer mode)
 
 1. Download this repository: **Code → Download ZIP**, then unzip it. Or clone it:
    `git clone https://github.com/sudhanp2004/ai-hours.git`
@@ -81,6 +85,11 @@ No build step: the `extension` folder is loaded as is.
 npm test      # Node's built-in test runner, no dependencies
 npm run e2e   # the real extension in headless Chrome against a fake chatgpt.com (needs google-chrome, python3, openssl)
 ```
+
+## Privacy
+
+See [PRIVACY.md](PRIVACY.md). In short: timing and model names only, stored in your browser,
+never sent anywhere.
 
 ## License
 

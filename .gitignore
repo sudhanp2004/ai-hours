@@ -7,3 +7,6 @@ node_modules/
 
 # Source art for the icons (has a watermark; extension/icons/ holds the cleaned versions)
 Gemini_Generated_Image_*.png
+
+# Store packages (npm run package)
+dist/
