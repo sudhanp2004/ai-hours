@@ -41,7 +41,7 @@ Honest by design
   page's Stop button.
 • When something can't be measured, it's shown as partly counted, never guessed.
 
-Open source: https://github.com/sudhanp2004/ai-hours
+Source code: https://github.com/sudhanp2004/ai-hours
 ```
 
 **Category:** Productivity → Tools (or "Workflow & Planning")

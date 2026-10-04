@@ -573,3 +573,76 @@ Re-pairing safely without a refresh would need signed messages between the halve
 as too much machinery for a convenience. `npm run e2e` (test/e2e/) now checks this end to end
 in headless Chrome against a local fake chatgpt.com: the real extension, loaded through CDP.
 
+
+## 13. Sign-in and sync (added 2026-10-05, user decisions; design, not yet built)
+
+**Why now.** Two features the user wants need data off the device: keep the history after
+clearing browser storage or reinstalling, and see one total across devices. Decided: Google
+sign-in, Neon as the backend, ship it as 1.1 after the store's 1.0.1.
+
+**Shape.** No server code. The extension signs in with Google itself and sends its records to
+Neon's Data API (PostgREST over Postgres) with Google's ID token. The Data API verifies the token
+against Google's public keys (`https://www.googleapis.com/oauth2/v3/certs`, audience = our OAuth
+client id) and runs every query as that user; Postgres row-level security lets a user read and
+write only their own rows. Neon's Managed Better Auth was considered and rejected: it keeps
+sessions in website cookies and does not yet support standalone frontends such as an extension.
+
+```
+extension ──chrome.identity──▶ Google ──ID token (JWT, ~1 h)──▶ extension
+extension ──HTTPS, Bearer token──▶ Neon Data API ──RLS: user_id = token sub──▶ Postgres
+```
+
+**Sign-in.** `chrome.identity.launchWebAuthFlow` (new permission `identity`, which has no install
+warning) opens Google's OpenID sign-in with `response_type=id_token`, `scope=openid`, a random
+nonce, and redirect `https://<extension-id>.chromiumapp.org/`. No client secret is involved. When
+the token expires, the same call with `prompt=none` renews it silently while the user is signed in
+to Google; if that fails, sync pauses and the popup says "Sign in again". We ask for `openid` only:
+no email, no name, no profile. Google's `sub` (a stable opaque id) is the user's whole identity
+here.
+
+**Data.** One table. Only what totals need: no conversation or message ids, no DOM details.
+
+```sql
+records (
+  user_id    text   not null default auth.user_id(),  -- Google sub, from the token
+  id         text   not null,                         -- the record's existing uuid
+  site       text   not null,
+  model      text,
+  start_ms   bigint not null,
+  end_ms     bigint,
+  last_seen  bigint,
+  outcome    text   not null,
+  recovered_ms integer,
+  updated_ms bigint not null,                         -- for last-writer-wins
+  primary key (user_id, id)
+)
+```
+
+Row-level security: `using (user_id = auth.user_id()) with check (user_id = auth.user_id())`.
+The same sanity rules as §12 become CHECK constraints (end ≥ start, at most 3 h, no start in
+the future, known sites only), so a forged upload can't exceed what the extension itself would
+count. A shared number is still self-reported (§12).
+
+**Sync.** Every record already has a stable id, so sync is idempotent upserts:
+- Each local write stamps `updatedMs` and marks the record dirty (an outbox in storage).
+- A `chrome.alarms` job every 5 minutes, plus one when the popup opens, sends dirty records in
+  batches (`POST /records`, `Prefer: resolution=merge-duplicates`). A record leaves the outbox only
+  after the server accepts it, so a crash or offline spell loses nothing.
+- After sign-in on a new device or empty storage, it pulls all of the user's rows, paged, and keeps
+  whichever copy of each record has the newer `updatedMs`. History from other devices is then
+  counted like any finished record.
+- Signed out, the extension works exactly as 1.0.x: local only, no network.
+
+**User controls (popup).** Sign in with Google · Sign out (keeps local data) · Delete my synced
+data (deletes every row of theirs on the server; local data stays).
+
+**What changes outside the code.** PRIVACY.md: what is sent when signed in, where it lives
+(Neon), and how to delete it. Store privacy answers: user data is transmitted, for sync only. The
+README's "no server" line becomes "no server unless you sign in".
+
+**Prerequisites only the developer can do:**
+1. A fixed extension id. The store assigns one when the item is first uploaded (even as a draft);
+   its public key goes into the dev manifest's `key` so an unpacked copy gets the same id.
+2. A Google Cloud OAuth client, type "Web application", authorized redirect URI
+   `https://<extension-id>.chromiumapp.org/`, consent screen "AI Hours". Its client id (not a
+   secret) goes in the extension.
