@@ -542,3 +542,26 @@ the same commit that fills in its verified values and flips `verified: true`.
 measured. There is deliberately no wildcard: a broad grant would let an adapter file run
 somewhere it was never probed.
 
+## 12. Tamper resistance (added 2026-10-04, user decision)
+
+**What cannot be done.** Everything runs and is stored on the user's machine, and the
+extension is installed unpacked. Whoever wants a bigger number can edit the code or write to
+`chrome.storage` directly; no client-side measure stops that, and none is attempted
+(obfuscation was considered and rejected: it slows a determined cheater by minutes and costs a
+readable public repo). The number is private today, so cheating only fools oneself. Any future
+sharing feature must call a shared number *self-reported* unless a server is built.
+
+**What is closed: cheap tricks, which are also correctness bugs.**
+
+| Hole | Before | Now |
+|---|---|---|
+| Forged signals | main-world posted with `window.postMessage`, so any page script, console one-liner or other extension could post fake replies | A **private channel**: a detached element only main-world.js and content.js hold. Handed over synchronously at `document_start` (main-world fires a bubbling `aihours:hello` from it; content.js keeps `e.target` and answers `aihours:ack` on it), before any page script exists. main-world saves `dispatchEvent`, `addEventListener`, `appendChild`, `remove`, `CustomEvent` and `JSON.stringify` first, so a page patching them later sees nothing. Whichever script runs second completes the exchange (`aihours:ready` asks for the hello); after the ack, or once the page could be running scripts (`DOMContentLoaded`), neither side listens. content.js no longer reads window messages at all. Verified in headless Chrome, both orders |
+| Page-supplied times | a forged end could claim any duration | content.js drops a signal whose time is non-numeric or over 10 min old, and clamps one in the future to now |
+| Unbounded records | one record could be any length; any number could run at once | one reply counts at most **3 hours** (`MAX_REPLY_MS`, in `total.js`, the tracker, which flags `capped`, and recovery); at most **4** replies open per tab |
+| Corrupt storage | a broken record could add NaN or negative time | `total.js` skips records with non-numbers, a start in the future, or an end before the start |
+
+**Cost.** After an extension update, an open tab's new content script cannot pair (the page is
+already running scripts, and pairing then would let the page answer in the hook's place), so
+that tab stops counting new replies until it is refreshed. Totals still show. Hook changes
+already needed a refresh, so this adds no new step.
+

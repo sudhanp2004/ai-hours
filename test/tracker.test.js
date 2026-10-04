@@ -243,3 +243,18 @@ test('a stop with nothing running writes nothing', () => {
   sig('stop', { t: 4000 });
   assert.deepEqual(writes, []);
 });
+
+// ---- tamper resistance (spec §12)
+test('at most 4 replies run at once in one tab; more starts are ignored', () => {
+  const { writes, sig } = setup();
+  for (let i = 0; i < 6; i++) sig('start', { localId: 'r' + i, t: 1000 + i });
+  assert.deepEqual([...new Set(writes.map((w) => w.id))], ['r0', 'r1', 'r2', 'r3']);
+});
+
+test('an end more than 3 hours after the start is cut to 3 hours and flagged', () => {
+  const { latest, sig } = setup();
+  sig('start', { localId: 'a', t: 1000 });
+  sig('end', { localId: 'a', t: 1000 + 5 * 3600e3, lastChunk: 1000 + 5 * 3600e3, outcome: 'completed' });
+  assert.equal(latest('a').end, 1000 + 3 * 3600e3);
+  assert.ok(latest('a').flags.includes('capped'));
+});

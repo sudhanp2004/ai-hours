@@ -5,6 +5,10 @@
   const DEBOUNCE_MS = 300;
   const DOM_ONLY_AFTER_MS = 10000;
   const FORGET_AFTER_MS = 60000;
+  // Tamper resistance (spec §12): no chat UI runs more than a few replies at once in a tab,
+  // and no single reply runs for hours. Past these, a signal is not trusted.
+  const MAX_OPEN = 4;
+  const MAX_REPLY_MS = 3 * 60 * 60 * 1000;
 
   // Server-clock facts, kept for validation and v2 background reconciliation.
   function mergeServer(s, sig) {
@@ -48,6 +52,7 @@
     }
 
     function onStart({ localId, t, sent }) {
+      if (open.size >= MAX_OPEN) return;
       const r = blank({
         id: localId, start: t,
         sent: { conversationId: sent?.conversationId ?? null, messageId: sent?.messageId ?? null },
@@ -81,10 +86,17 @@
     }
 
     function finish(r, end, outcome) {
+      if (end - r.start > MAX_REPLY_MS) (end = r.start + MAX_REPLY_MS), (r.capped = true);
       r.end = end;
       r.outcome = outcome;
       r.lastSeen = end;
-      Object.assign(r, ns.classify({ fetch: { end }, dom: r.dom }));
+      classifyInto(r);
+    }
+
+    // classify() rewrites the flags, so a cap noted earlier is put back each time.
+    function classifyInto(r) {
+      Object.assign(r, ns.classify({ fetch: { end: r.end }, dom: r.dom }));
+      if (r.capped) r.flags = [...r.flags, 'capped'];
     }
 
     function attach(r, d) {
@@ -126,7 +138,7 @@
     }
 
     function reclassify(r) {
-      Object.assign(r, ns.classify({ fetch: { end: r.end }, dom: r.dom }));
+      classifyInto(r);
       write(r);
     }
 

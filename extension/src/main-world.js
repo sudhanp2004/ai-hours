@@ -14,7 +14,40 @@
 
   const ns = () => globalThis.__aiHours; // read at call time so re-injected adapters take effect
   const origFetch = window.fetch;
-  const post = (type, payload) => window.postMessage({ __aih: 1, type, ...payload }, location.origin);
+
+  // ---- the private channel to content.js (spec §12, Tamper resistance)
+  // This world is shared with the page, so window.postMessage would let any page script (or a
+  // console one-liner) post fake replies. Instead the two halves share a detached element that
+  // only they hold. It is handed over synchronously at document_start, before any page script
+  // exists: we attach it, fire a bubbling hello from it (content.js keeps e.target), and detach
+  // it again. Every DOM function used is saved now, before the page could replace it.
+  const doc = document;
+  const CE = window.CustomEvent;
+  const dispatch = EventTarget.prototype.dispatchEvent;
+  const listen = EventTarget.prototype.addEventListener;
+  const unlisten = EventTarget.prototype.removeEventListener;
+  const attach = Node.prototype.appendChild;
+  const detach = Element.prototype.remove;
+  const stringify = JSON.stringify;
+  const channel = doc.createElement('ai-hours-channel');
+  let paired = false;
+  function hello() {
+    if (paired || !doc.documentElement) return;
+    attach.call(doc.documentElement, channel);
+    dispatch.call(channel, new CE('aihours:hello', { bubbles: true }));
+    detach.call(channel);
+  }
+  // content.js may run before or after us; whichever is second completes the exchange. Once
+  // it has (ack), or once page scripts can be running (DOMContentLoaded), nothing re-offers.
+  const onReady = () => hello();
+  const disarm = () => unlisten.call(doc, 'aihours:ready', onReady);
+  if (doc.readyState === 'loading') {
+    listen.call(doc, 'aihours:ready', onReady);
+    listen.call(channel, 'aihours:ack', () => ((paired = true), disarm()));
+    listen.call(doc, 'DOMContentLoaded', disarm, { once: true });
+    hello();
+  }
+  const post = (type, payload) => dispatch.call(channel, new CE('aihours:signal', { detail: stringify({ __aih: 1, type, ...payload }) }));
   // How often a streaming reply says "still here". Other tabs count it live from this, and
   // each one becomes a storage write there, so it is throttled well above the chunk rate.
   const aliveEvery = () => ns().site?.aliveEveryMs ?? 2000;

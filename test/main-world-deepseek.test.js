@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const SECRET = 'SECRET-TEXT-MUST-NOT-LEAK';
-const posts = [];
+const { posts } = require('./page-env.js');
 class FakeXHR {
   constructor() { this.listeners = {}; this.status = 0; this.responseText = ''; }
   open(method, url) { this.url = url; }
@@ -12,9 +12,7 @@ class FakeXHR {
   addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
   fire(type) { for (const fn of this.listeners[type] || []) fn({ type }); }
 }
-globalThis.window = globalThis;
 globalThis.location = new URL('https://chat.deepseek.com/a/chat/s/e5bde4d4-18ea-4bae-b3d0-56b6c9304569');
-globalThis.postMessage = (m) => posts.push(m);
 globalThis.fetch = async () => new Response('ok');
 globalThis.XMLHttpRequest = FakeXHR;
 for (const f of ['sse', 'sites/deepseek-network', 'sites/deepseek-page', 'main-world']) require(`../extension/src/${f}.js`);

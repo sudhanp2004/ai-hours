@@ -42,7 +42,8 @@ extensions installed this way; click the × to dismiss it.
 ### Updating
 
 Extensions loaded this way do not update themselves. Download the new version (or `git pull`),
-then click the ↻ reload icon on the AI Hours card in `chrome://extensions`. Your total is kept.
+then click the ↻ reload icon on the AI Hours card in `chrome://extensions`, and **refresh your
+open chat tabs**: a tab counts new replies again only after a refresh. Your total is kept.
 
 ## The breakdown
 
@@ -62,6 +63,14 @@ a reply in a tab you closed mid-way can't be recovered, so their time may be a l
 
 The design, and what was verified on each site, is in
 [`docs/superpowers/specs/2026-09-30-ai-hours-v1-design.md`](docs/superpowers/specs/2026-09-30-ai-hours-v1-design.md).
+
+## Can the number be faked?
+
+Not by casual tricks: page scripts, console one-liners and other extensions can't post fake
+replies, times are sanity-checked, and a single reply counts at most 3 hours. But the
+extension runs and stores everything on your own machine, so someone who edits its code or its
+storage can make it say anything. Nothing local can prevent that, so the number is yours, and
+it's only as honest as you are. Details: spec §12.
 
 ## Development
 

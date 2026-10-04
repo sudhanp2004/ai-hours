@@ -126,3 +126,25 @@ test('formatClock always shows seconds, for the live counter', () => {
   assert.equal(formatClock(3 * HOUR + 12 * 60000 + 41000), '3h 12m 41s');
   assert.equal(formatClock(312 * HOUR), '312h 0m 0s');
 });
+
+// ---- tamper resistance (spec §12): limits a forged or broken record cannot exceed
+test('one reply counts at most 3 hours, however it was stored', () => {
+  const H = 3600e3;
+  assert.equal(summarize([rec({ start: NOW - 10 * H, end: NOW })], NOW).totalMs, 3 * H);
+  assert.equal(summarize([rec({ recovered: { durationMs: 50 * H } })], NOW).totalMs, 3 * H);
+  assert.equal(liveTotal([{ start: NOW - 9 * H, end: null, lastSeen: NOW }], NOW).ms, 3 * H);
+});
+
+test('malformed records count nothing: non-numbers, a start in the future, an end before the start', () => {
+  const bad = [
+    rec({ start: 'yesterday', end: NOW }),
+    rec({ start: NOW + 3600e3, end: NOW + 7200e3 }),
+    rec({ start: NOW, end: NOW - 5000 }),
+    rec({ start: NOW - 5000, end: Infinity }),
+    rec({ recovered: { durationMs: NaN } }),
+    null,
+    'rec',
+  ];
+  assert.equal(summarize(bad, NOW).totalMs, 0);
+  assert.equal(liveTotal(bad, NOW).ms, 0);
+});

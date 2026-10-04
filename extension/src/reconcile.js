@@ -51,7 +51,8 @@
       end: null, // the duration lives in recovered.durationMs; end stays unknown
       recovered: {
         at: now,
-        durationMs: dur < 0 ? 0 : dur,
+        // Never more than the longest reply that counts at all (spec §12).
+        durationMs: Math.min(dur < 0 ? 0 : dur, 3 * 60 * 60 * 1000),
         matchedBy: matchedBy(rec, t),
         serverStart: t.startSec ?? null,
         serverEnd: t.endSec ?? null,

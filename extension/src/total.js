@@ -6,6 +6,20 @@
   // Normal inter-chunk silences are up to ~6 s (spike), so 30 s is generous but finite:
   // a browser that quit or crashed announces nothing, so liveness has to expire.
   const LIVE_STALE_MS = 30 * 1000;
+  // Tamper resistance (spec §12): the longest single reply that counts. Deep research runs
+  // for tens of minutes; nothing real runs for hours. Applied to every record however it
+  // was stored, so a forged or broken record cannot add more than this.
+  const MAX_REPLY_MS = 3 * 60 * 60 * 1000;
+  ns.MAX_REPLY_MS = MAX_REPLY_MS;
+  const num = (x) => typeof x === 'number' && Number.isFinite(x);
+  const cap = (ms) => Math.min(Math.max(0, ms), MAX_REPLY_MS);
+  // A record that can't be real counts nothing: non-numbers, a start in the future, an end
+  // before its start, or a recovered duration that isn't a number.
+  const valid = (r, now) =>
+    !!r && typeof r === 'object' && num(r.start) && r.start <= now + 60 * 1000 &&
+    (r.end == null || (num(r.end) && r.end >= r.start)) &&
+    (!r.recovered || num(r.recovered.durationMs)) &&
+    (r.lastSeen == null || num(r.lastSeen));
 
   // The time a reply was seen working, up to its last sign of life. A reply that lost its tab
   // (refresh, close, quit) keeps this much: measured, never guessed (changed 2026-10-03).
@@ -15,11 +29,12 @@
     let totalMs = 0;
     let partial = 0;
     for (const r of records) {
+      if (!valid(r, now)) continue;
       // A recovered record's duration is a span of two clocks, so it can't be end - start.
-      if (r.recovered) totalMs += Math.max(0, r.recovered.durationMs);
-      else if (r.end != null) totalMs += Math.max(0, r.end - r.start);
+      if (r.recovered) totalMs += cap(r.recovered.durationMs);
+      else if (r.end != null) totalMs += cap(r.end - r.start);
       else {
-        totalMs += watched(r);
+        totalMs += cap(watched(r));
         // Past an hour it is not still running: only the watched part of it was counted.
         if (now - r.start > IN_PROGRESS_MS) partial++;
       }
@@ -30,12 +45,13 @@
   // What one record adds to the live count right now: null if nothing, else its ms and
   // whether it is still gaining time.
   function liveShare(r, now) {
-    if (r.recovered) return { ms: Math.max(0, r.recovered.durationMs), live: false };
-    if (r.end != null) return { ms: Math.max(0, r.end - r.start), live: false };
+    if (!valid(r, now)) return null;
+    if (r.recovered) return { ms: cap(r.recovered.durationMs), live: false };
+    if (r.end != null) return { ms: cap(r.end - r.start), live: false };
     // A pending record's tab is gone, and a silent one's browser may be: neither can be
     // watched any further, so each keeps what was watched and gains nothing more.
-    if (r.outcome === 'pending' || now - (r.lastSeen ?? r.start) > LIVE_STALE_MS) return { ms: watched(r), live: false };
-    return { ms: Math.max(0, now - r.start), live: true };
+    if (r.outcome === 'pending' || now - (r.lastSeen ?? r.start) > LIVE_STALE_MS) return { ms: cap(watched(r)), live: false };
+    return { ms: cap(now - r.start), live: true };
   }
 
   // Saved total plus every reply still gaining time, in any tab. `working` is how many

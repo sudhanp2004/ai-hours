@@ -3,12 +3,10 @@ const assert = require('node:assert/strict');
 
 const SECRET = 'SECRET-TEXT-MUST-NOT-LEAK';
 const enc = new TextEncoder();
-const posts = [];
+const { posts } = require('./page-env.js');
 let respond = null;
 
-globalThis.window = globalThis;
 globalThis.location = new URL('https://chatgpt.com/c/abc');
-globalThis.postMessage = (m, origin) => { assert.equal(origin, 'https://chatgpt.com'); posts.push(m); };
 globalThis.fetch = async (input, init) => respond(input, init);
 
 const sse = (chunks, gapMs = 5) => () => new Response(new ReadableStream({

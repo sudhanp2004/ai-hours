@@ -81,11 +81,49 @@
   let ready = false;
   const inbox = [];
 
-  function onMessage(e) {
-    if (e.source !== window || e.data?.__aih !== 1) return;
-    if (ready) handle(e.data);
-    else inbox.push(e.data);
+  // Signals arrive only on the private channel main-world.js hands us at document_start
+  // (spec §12): never from window messages, which any page script could post.
+  function onSignalEvent(e) {
+    let msg;
+    try {
+      msg = JSON.parse(e.detail);
+    } catch {
+      return;
+    }
+    if (msg?.__aih !== 1 || typeof msg.type !== 'string') return;
+    msg = sane(msg, Date.now());
+    if (!msg) return;
+    if (ready) handle(msg);
+    else inbox.push(msg);
   }
+
+  // A signal's times must be recent and not in the future: the hook sends them as it sees
+  // them, so anything else is a forgery or a broken clock, and is dropped or clamped.
+  const RECENT_MS = 10 * 60 * 1000;
+  function sane(msg, now) {
+    for (const k of ['t', 'lastChunk']) {
+      if (msg[k] == null) continue;
+      if (typeof msg[k] !== 'number' || !Number.isFinite(msg[k])) return null;
+      if (msg[k] > now) msg[k] = now;
+    }
+    if (msg.t != null && msg.t < now - RECENT_MS) return null;
+    return msg;
+  }
+
+  // The handshake: main-world.js fires a bubbling hello from its channel element; we keep the
+  // element. Whichever script runs second completes it, synchronously, before any page script.
+  // A copy injected later (an extension update) finds the page already loading scripts and
+  // does not pair, since a page could answer in the hook's place; that tab counts again after
+  // a refresh.
+  let channel = null;
+  const onHello = (e) => {
+    if (channel || !e.target || e.target === document) return;
+    channel = e.target;
+    channel.addEventListener('aihours:signal', onSignalEvent);
+    channel.dispatchEvent(new CustomEvent('aihours:ack'));
+    unpair();
+  };
+  const unpair = () => document.removeEventListener('aihours:hello', onHello, true);
 
   function handle(msg) {
     if (msg.type === 'conversation') return onConversation(msg);
@@ -139,7 +177,11 @@
     setTimeout(() => tracker?.confirm(Date.now()), 350);
   });
 
-  window.addEventListener('message', onMessage);
+  if (document.readyState === 'loading') {
+    document.addEventListener('aihours:hello', onHello, true);
+    document.addEventListener('DOMContentLoaded', unpair, { once: true });
+    document.dispatchEvent(new CustomEvent('aihours:ready'));
+  }
   observer.observe(document.documentElement, {
     childList: true, subtree: true, attributes: true, attributeFilter: ['data-testid'],
   });
@@ -196,7 +238,8 @@
   });
 
   function stop() {
-    window.removeEventListener('message', onMessage);
+    channel?.removeEventListener('aihours:signal', onSignalEvent);
+    unpair();
     chrome.storage.onChanged.removeListener(onStorage);
     observer.disconnect();
     clearInterval(ticker);

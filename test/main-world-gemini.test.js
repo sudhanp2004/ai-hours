@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const SECRET = 'SECRET-TEXT-MUST-NOT-LEAK';
 const BE = '/_/BardChatUi/data/batchexecute';
 const SG = '/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate';
-const posts = [];
+const { posts } = require('./page-env.js');
 
 // Just enough XMLHttpRequest for the hook: open/send on the prototype, events by hand.
 class FakeXHR {
@@ -17,9 +17,7 @@ class FakeXHR {
   fire(type) { for (const fn of this.listeners[type] || []) fn({ type }); }
 }
 
-globalThis.window = globalThis;
 globalThis.location = new URL('https://gemini.google.com/app/1f9dadf233e175e7');
-globalThis.postMessage = (m) => posts.push(m);
 globalThis.fetch = async () => new Response('ok');
 globalThis.XMLHttpRequest = FakeXHR;
 for (const f of ['sse', 'sites/gemini-network', 'sites/gemini-page', 'main-world']) require(`../extension/src/${f}.js`);

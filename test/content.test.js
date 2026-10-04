@@ -30,13 +30,17 @@ function fakeDocument(selector) {
   };
   const body = makeEl();
   body.isConnected = true; // a loaded page, so the pill reveals itself
+  const listeners = {};
   return {
+    readyState: 'loading', // document_start, when content.js really runs
+    listeners,
+    addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+    removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((f) => f !== fn); },
+    dispatchEvent(e) { for (const fn of [...(listeners[e.type] || [])]) fn(e); return true; },
     body,
     createElement: () => ({ ...makeEl(), attachShadow: () => ({ innerHTML: '', querySelector: makeEl }) }),
     querySelector: () => null,
     querySelectorAll: () => [],
-    addEventListener() {},
-    removeEventListener() {},
     documentElement: makeEl(),
   };
 }
@@ -44,7 +48,7 @@ function fakeDocument(selector) {
 // The adapter is normally loaded from sites/, which is where the manifest points. A test can
 // name different files to simulate a page whose adapter is for another site (see the hosts
 // guard below), so the load list is a parameter rather than a constant.
-function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname } = {}) {
+function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname, readyState } = {}) {
   const store = { ...stored };
   const sent = [];
   const listeners = { message: null, storage: null };
@@ -60,10 +64,12 @@ function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname } = {}) {
       disconnect() {}
     },
     structuredClone,
+    CustomEvent,
     Date: { now: () => T0 },
   };
   ctx.removeEventListener = () => {};
   ctx.document = fakeDocument();
+  if (readyState) ctx.document.readyState = readyState;
   // A plain object, not a URL: URL.hostname is read-only, and a test needs to stand on a
   // different domain to check the hosts guard.
   ctx.location = { href: 'https://chatgpt.com/c/abc', origin: 'https://chatgpt.com', hostname: hostname ?? 'chatgpt.com' };
@@ -84,20 +90,21 @@ function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname } = {}) {
   vm.runInContext(
     `
     globalThis.window = globalThis;
-    globalThis.addEventListener = (type, fn) => { if (type === 'message') globalThis.__onMessage = fn; };
+    globalThis.addEventListener = (type) => { if (type === 'message') throw new Error('window messages must not be trusted'); };
     globalThis.removeEventListener = () => {};
-    globalThis.__deliver = (data) => globalThis.__onMessage({ source: window, data });
   `,
     context,
   );
   for (const f of siteFiles) vm.runInContext(fs.readFileSync(path.join(root, 'src', `${f}.js`), 'utf8'), context, { filename: f });
   vm.runInContext(fs.readFileSync(path.join(root, 'src', 'content.js'), 'utf8'), context, { filename: 'content.js' });
-  // runInContext takes no sandbox argument, so the payload goes on the context object.
-  const send = (context, data) => {
-    Object.assign(context, { __payload: { __aih: 1, ...data } });
-    vm.runInContext('__deliver(__payload)', context);
-  };
-  return { context, store, sent, listeners, send };
+  // Play main-world.js's half of the handshake: a hello whose target is the private channel.
+  const channel = new EventTarget();
+  let paired = false;
+  channel.addEventListener('aihours:ack', () => (paired = true));
+  ctx.document.dispatchEvent({ type: 'aihours:hello', target: channel });
+  const send = (context, data) =>
+    channel.dispatchEvent(new CustomEvent('aihours:signal', { detail: JSON.stringify({ __aih: 1, ...data }) }));
+  return { context, store, sent, listeners, send, channel, paired: () => paired, doc: ctx.document };
 }
 
 // The ask for the tab id and the orphan scan each resolve on their own microtask, so tests
@@ -121,9 +128,9 @@ test('content.js loads and registers its listeners', async () => {
 // dom-missing. Doing nothing is the recoverable failure; wrong numbers are not.
 test('a page whose domain the adapter does not claim records nothing at all', async () => {
   // chatgpt's adapter on a Claude page: the manifest would be wrong, so refuse.
-  const { context, store } = setup({ hostname: 'claude.ai' });
+  const { store, paired } = setup({ hostname: 'claude.ai' });
   await settle();
-  assert.equal(inContext(context, 'typeof __onMessage'), 'undefined', 'no window message listener is registered');
+  assert.equal(paired(), false, 'no channel is taken');
   assert.equal(store['rec:a'], undefined, 'nothing is written');
 });
 
@@ -132,12 +139,12 @@ test('the hosts guard matches a real subdomain, never a bare prefix', async () =
   // manifest pattern would let us run on a domain the user never granted.
   const wrong = setup({ hostname: 'evilchatgpt.com' });
   await settle();
-  assert.equal(inContext(wrong.context, 'typeof __onMessage'), 'undefined', 'a bare prefix match is refused');
+  assert.equal(wrong.paired(), false, 'a bare prefix match is refused');
 
   // "www.chatgpt.com" is a true subdomain and is legitimately covered by the host.
   const right = setup({ hostname: 'www.chatgpt.com' });
   await settle();
-  assert.equal(inContext(right.context, 'typeof __onMessage'), 'function', 'a real subdomain is accepted');
+  assert.equal(right.paired(), true, 'a real subdomain is accepted');
 });
 
 test('a record written by the tracker carries this tab id and the send ids', async () => {
@@ -172,11 +179,11 @@ test('a record this page creates is never closed as a leftover of the last one',
 test('a finished stream is saved with its end', async () => {
   const { context, store, send } = setup();
   await settle();
-  send(context, { type: 'start', localId: 'a', t: T0 });
-  send(context, { type: 'end', localId: 'a', t: T0 + 5000, lastChunk: T0 + 5000, outcome: 'completed' });
+  send(context, { type: 'start', localId: 'a', t: T0 - 5000 });
+  send(context, { type: 'end', localId: 'a', t: T0, lastChunk: T0, outcome: 'completed' });
   await settle();
   assert.equal(store['rec:a'].outcome, 'completed');
-  assert.equal(store['rec:a'].end, T0 + 5000);
+  assert.equal(store['rec:a'].end, T0);
 });
 
 // ---- closed-tab recovery, wired end to end through content.js
@@ -290,15 +297,15 @@ test('a reply still running after a refresh is adopted by the new page and finis
   const { context, store, send } = setup({ stored });
   await settle();
   assert.equal(store['rec:old'].outcome, 'pending');
-  send(context, { type: 'resume', localId: 'L2', t: T0 + 500 });
+  send(context, { type: 'resume', localId: 'L2', t: T0 - 500 });
   await settle();
   assert.equal(store['rec:old'].outcome, 'unknown', 'counting live again');
-  assert.equal(store['rec:old'].lastSeen, T0 + 500);
+  assert.equal(store['rec:old'].lastSeen, T0 - 500);
   assert.ok(store['rec:old'].flags.includes('resumed'));
   assert.equal(store['rec:old'].closedAt, undefined);
-  send(context, { type: 'end', localId: 'L2', t: T0 + 9000, lastChunk: T0 + 9000, outcome: 'completed' });
+  send(context, { type: 'end', localId: 'L2', t: T0, lastChunk: T0, outcome: 'completed' });
   await settle();
-  assert.equal(store['rec:old'].end, T0 + 9000);
+  assert.equal(store['rec:old'].end, T0);
   assert.equal(store['rec:old'].outcome, 'completed');
   assert.equal(store['rec:old'].server.model, 'claude-opus-5-5', 'its server facts survive the takeover');
 });
@@ -340,4 +347,42 @@ test('a record left unknown by a browser quit is recovered when the chat is open
   await settle();
   assert.equal(store['rec:q'].outcome, 'recovered');
   assert.equal(store['rec:q'].recovered.durationMs, 5000 + 30000);
+});
+
+// ---- the private channel (spec §12)
+test('a second hello (a page trying to pair after the hook) is ignored', async () => {
+  const { store, doc, send } = setup();
+  await settle();
+  const fake = new EventTarget();
+  let acked = false;
+  fake.addEventListener('aihours:ack', () => (acked = true));
+  doc.dispatchEvent({ type: 'aihours:hello', target: fake });
+  assert.equal(acked, false);
+  assert.equal((doc.listeners['aihours:hello'] || []).length, 0, 'no longer listening at all');
+  fake.dispatchEvent(new CustomEvent('aihours:signal', { detail: JSON.stringify({ __aih: 1, type: 'start', localId: 'x', t: T0 }) }));
+  await settle();
+  assert.equal(Object.keys(store).length, 0, 'a forged channel writes nothing');
+  send(null, { type: 'start', localId: 'real', t: T0 });
+  await settle();
+  assert.equal(Object.keys(store).length, 1, 'the real one still does');
+});
+
+test('signals with times in the future are clamped to now; very old or non-numeric ones are dropped', async () => {
+  const { store, send } = setup();
+  await settle();
+  send(null, { type: 'start', localId: 'a', t: T0 - 5000 });
+  send(null, { type: 'end', localId: 'a', t: T0 + 10 * 3600e3, lastChunk: T0 + 10 * 3600e3, outcome: 'completed' });
+  await settle();
+  const r = Object.values(store)[0];
+  assert.equal(r.end, T0, 'a fake future end is clamped to now');
+  send(null, { type: 'start', localId: 'b', t: T0 - 3600e3 });
+  send(null, { type: 'start', localId: 'c', t: 'soon' });
+  await settle();
+  assert.equal(Object.keys(store).length, 1, 'old and malformed starts are dropped');
+});
+
+test('a copy injected after the page loaded does not pair: a page could answer in the hook\u2019s place', async () => {
+  const { paired } = setup({ readyState: 'interactive' });
+  await settle();
+  assert.equal(paired(), false);
 });

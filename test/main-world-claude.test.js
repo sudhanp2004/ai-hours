@@ -7,12 +7,10 @@ const pb = require('./protobuf-helper.js');
 const SECRET = 'SECRET-TEXT-MUST-NOT-LEAK';
 const CONV = '6cab7d36-4dac-4b37-a10d-c3c54d465243';
 const RPC = '/claudeai-rpc/anthropic.bard.api.v1alpha.ConversationService';
-const posts = [];
+const { posts } = require('./page-env.js');
 let respond = null;
 
-globalThis.window = globalThis;
 globalThis.location = new URL(`https://claude.ai/chat/${CONV}`);
-globalThis.postMessage = (m) => posts.push(m);
 globalThis.fetch = async (input, init) => respond(input, init);
 for (const f of ['sse', 'sites/claude-network', 'main-world']) require(`../extension/src/${f}.js`);
 
