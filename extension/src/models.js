@@ -11,6 +11,7 @@
     perplexity: { name: 'Perplexity', recovers: true },
     claude: { name: 'Claude', recovers: false },
     gemini: { name: 'Gemini', recovers: false },
+    deepseek: { name: 'DeepSeek', recovers: false },
   };
   ns.siteInfo = (site) => SITES[site] ?? { name: String(site), recovers: false };
 
@@ -27,6 +28,9 @@
     // gpt-5, gpt-5-thinking, gpt-4.1-mini
     m = /^gpt-([\w.]+)((?:-[a-z]+)*)$/.exec(slug);
     if (m) return `GPT-${m[1]}${m[2].split('-').filter(Boolean).map((w) => ' ' + cap(w)).join('')}`;
+    // deepseek-default, deepseek-default-deepthink (built from DeepSeek's request fields)
+    m = /^deepseek-([\w.]+?)(-deepthink)?$/.exec(slug);
+    if (m) return `DeepSeek${m[1] === 'default' ? '' : ' ' + cap(m[1])}${m[2] ? ' DeepThink' : ''}`;
     return slug;
   };
 })(globalThis);

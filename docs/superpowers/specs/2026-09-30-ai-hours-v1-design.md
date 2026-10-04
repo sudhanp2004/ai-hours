@@ -339,7 +339,7 @@ Six facts, all from one DevTools paste (`spike/multisite-probe.js`):
 | copilot.microsoft.com | stub | not yet | not yet | no |
 | grok.com | stub | not yet | not yet | no |
 | you.com | stub | not yet | not yet | no |
-| chat.deepseek.com | stub | not yet | not yet | no |
+| chat.deepseek.com | written 2026-10-04 from the probe (below) | yes, not yet run end to end | no: the history load is a cache delta with no messages | yes |
 
 ### Probe results
 
@@ -501,6 +501,27 @@ Perplexity ever added it back. Now:
   reply used to go stale after 30 s. Every data frame (deltas, heartbeats) is now a sign of life.
 - Not done: ChatGPT and Perplexity re-attach their stream on reload through endpoints we do
   not wrap, so their resumed tail is only counted when the conversation load recovers it.
+
+**chat.deepseek.com (2026-10-04, signed in: one finished reply, one stopped, chat loads).**
+1. **Send = stream:** one `XMLHttpRequest`, `POST /api/v0/chat/completion` (preceded by
+   `create_pow_challenge`). Body: `chat_session_id, parent_message_id, model_type, prompt,
+   ref_file_ids, thinking_enabled, search_enabled, action, preempt`.
+2. **Stream:** `text/event-stream` over XHR; events `ready`, `update_session`, then JSON-patch-like
+   `data:` lines (`{p, o: APPEND|SET|BATCH, v}`), and finally `close`.
+3. **End:** `{p: "response/status", o: "SET", v: "FINISHED"}` (stopped: `"INCOMPLETE"`), then
+   `update_session` and `close`; the XHR ends within ~10 ms, so the Gemini-style XHR shape
+   (start to `loadend`) times it with no parsing.
+4. **Stop:** its own XHR, `POST /api/v0/chat/stop_stream` (`chat_session_id, message_id`), at the
+   press; the stream ended ~265 ms later with `INCOMPLETE`.
+5. **Stop button:** no label or test id; the primary send button swaps its icon to a rounded
+   square, matched as `.ds-button--primary path[d^="M2 4.88"]`. Fragile, but losing it only
+   loses the cross-check.
+6. **Conversation load:** `history_messages` on page load only (a revisit is served from
+   memory), and it returned `chat_messages: []` with `cache_control: "MERGE"`: the app keeps
+   messages in its own cache. No recovery; a closed tab keeps the watched time.
+- **Model:** `model_type` (`"default"`) and `thinking_enabled` from the request body, stored as
+  `deepseek-default[-deepthink]`, shown "DeepSeek" / "DeepSeek DeepThink". The stream's own
+  `model` field was empty. (It also reports `accumulated_token_usage`, unused.)
 
 **Clock skew seen on this machine (2026-10-03):** Perplexity's server timestamps ran a steady
 ~4.8 s ahead of the client clock (created − send = 4.81–4.86 s on all three turns). Never mix a

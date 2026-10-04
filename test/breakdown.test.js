@@ -139,3 +139,10 @@ test('panel: clicking a row opens that LLM’s models', () => {
   c.handlers.click({ target: { closest: () => ({ dataset: { site: 'claude' } }) } });
   assert.doesNotMatch(c.html, /Opus 5\.5/);
 });
+
+test('DeepSeek: its request-derived slugs read as the product names', () => {
+  assert.equal(modelName('deepseek-default'), 'DeepSeek');
+  assert.equal(modelName('deepseek-default-deepthink'), 'DeepSeek DeepThink');
+  assert.equal(modelName('deepseek-expert'), 'DeepSeek Expert');
+  assert.deepEqual(siteInfo('deepseek'), { name: 'DeepSeek', recovers: false });
+});

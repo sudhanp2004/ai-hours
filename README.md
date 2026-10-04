@@ -13,16 +13,17 @@ storage: there is no server, no account and no analytics.
 | Site | Live counting | Reply finished in a closed tab |
 |---|---|---|
 | chatgpt.com | yes | recovered when you reopen the chat |
-| perplexity.ai | yes (new, not yet tested end to end) | recovered when you reopen the thread |
+| perplexity.ai | yes | recovered when you reopen the thread |
 | claude.ai | yes | the time you watched; if you refresh and it's still running, counted to the end |
 | gemini.google.com | yes | the time you watched |
+| chat.deepseek.com | yes (new) | the time you watched |
 
-"Counted as unknown" means a reply whose tab you closed mid-way is not added to your total:
-Claude and Gemini don't save an end time we can read back, and AI Hours never guesses. The
-popup shows how many replies were unknown.
+"The time you watched" means a reply whose tab you closed mid-way counts up to the moment you
+stopped seeing it: these sites don't save an end time we can read back, and AI Hours never
+guesses the rest. The popup says how many replies were only partly counted.
 
 A site is only added once its network behaviour has been checked by hand, so the number stays
-honest. Copilot, Grok, DeepSeek and You.com have placeholder adapters but are **not** enabled.
+honest. Copilot, Grok and You.com have placeholder adapters but are **not** enabled.
 
 ## Install (no Chrome Web Store)
 
@@ -32,7 +33,7 @@ honest. Copilot, Grok, DeepSeek and You.com have placeholder adapters but are **
 3. Turn on **Developer mode** (top right).
 4. Click **Load unpacked** and choose the `extension` folder inside the download (the one that
    contains `manifest.json`).
-5. Open ChatGPT, Perplexity, Claude or Gemini and send a message. A small counter appears at the top right,
+5. Open ChatGPT, Perplexity, Claude, Gemini or DeepSeek and send a message. A small counter appears at the top right,
    and clicking the AI Hours toolbar icon (pin it from the puzzle-piece menu) shows your total.
 
 Chrome may show a "Disable developer mode extensions" notice when it starts. That is normal for

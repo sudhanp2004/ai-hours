@@ -151,7 +151,7 @@
     };
     XHR.send = function () {
       try {
-        watchXhr(this, pathOf(this[URL_KEY]));
+        watchXhr(this, pathOf(this[URL_KEY]), arguments[0]);
       } catch {
         // Never disturb the page's own request.
       }
@@ -159,7 +159,7 @@
     };
   }
 
-  function watchXhr(xhr, path) {
+  function watchXhr(xhr, path, body) {
     const site = ns().site;
     if (!site || !path) return;
     if (site.stopUrl?.test(path)) post('stop', { t: Date.now() });
@@ -169,6 +169,13 @@
     let lastChunk = null;
     let lastAlive = 0;
     let model = null;
+    // Some sites name the model in the request (DeepSeek); read it once, at the send.
+    try {
+      model = site.modelFromRequest?.(body) ?? null;
+    } catch {
+      model = null;
+    }
+    if (model) post('message', { localId, sig: { kind: 'message', role: 'assistant', model } });
     // Looked for while the reply streams, not at the end: Stop finishes the record at the
     // press, and a model learned after that would have nothing to attach to.
     const findModel = () => {

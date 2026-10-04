@@ -1,23 +1,36 @@
-// deepseek network config (MAIN world). STUB — not yet verified, so not in the manifest.
-// Fill in from spike/site-probe.js, then flip verified to true and add this site to
-// manifest.json (both halves, one entry each) in the same commit.
+// DeepSeek network config (MAIN world). Verified in DevTools on 2026-10-04 (spec §11, Probe
+// results). The reply is one XMLHttpRequest whose body is SSE; it ends right after
+// response/status becomes FINISHED (or INCOMPLETE when stopped), so the request's own start
+// and end time it, the same shape as Gemini. Stop is its own request.
+// The page-side half lives in deepseek-page.js: a file can't be listed in both worlds.
 (function (root) {
   const ns = (root.__aiHours = root.__aiHours || {});
+
+  // The request names the model as model_type ("default") plus a DeepThink switch. Only those
+  // two fields are read; the prompt is in the same body and is never touched.
+  function modelFromRequest(body) {
+    let j;
+    try {
+      j = JSON.parse(typeof body === 'string' ? body : '');
+    } catch {
+      return null;
+    }
+    const type = j?.model_type;
+    if (typeof type !== 'string' || !/^[\w.-]{1,32}$/.test(type)) return null;
+    return `deepseek-${type}${j.thinking_enabled === true ? '-deepthink' : ''}`;
+  }
+
   ns.site = Object.assign(ns.site || {}, {
-    verified: false,          // flip to true only after the probe confirms the endpoints
-    // TODO(probe fact 2): regex for the chat stream URL, e.g. /\/stream\/generate$/
-    streamUrl: null,
-    // TODO(probe fact 4): regex for the stop request, if the site issues one
-    stopUrl: null,
-    // TODO(probe fact 6): regex for the conversation-load URL, or null if chats load
-    // from memory (which means no closed-tab recovery on this site — see spec §11)
+    verified: true,
+    streamUrl: /^\/api\/v0\/chat\/completion$/,
+    stopUrl: /^\/api\/v0\/chat\/stop_stream$/,
+    // history_messages came back with no messages (cache_control: MERGE): the app keeps its
+    // own copy and asks only for changes. Nothing to recover from, so a reply whose tab
+    // closed keeps the time that was watched (spec §11).
     conversationUrl: null,
-    // TODO(probe fact 3): SSE → Signal | null. Reuse the shape from chatgpt-network.js.
-    // If the stream is not SSE, stop here and read spec ⚑8 before writing this.
     parseEvent: null,
-    // TODO(probe fact 1): read the two ids out of the send body, ids only, never text
     sendIds: null,
-    // TODO(probe fact 6): loaded conversation JSON → Turn[]. Reuse turnFor's shape.
     parseConversation: null,
+    modelFromRequest,
   });
 })(globalThis);
