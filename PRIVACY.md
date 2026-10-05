@@ -1,6 +1,6 @@
 # AI Hours: Privacy Policy
 
-Last updated: 4 October 2026
+Last updated: 5 October 2026
 
 AI Hours is a browser extension that measures how long AI chat assistants spend working on
 your replies, and shows you the total. This policy explains what it reads, what it keeps, and
@@ -10,8 +10,9 @@ where that goes.
 
 - AI Hours records **when** an AI worked for you, never **what** was said. Your prompts and the
   AI's replies are never stored, copied or sent anywhere.
-- Everything it records stays **in your own browser**. AI Hours has no server and no account,
-  and it sends no data to the developer or to anyone else.
+- What it records stays **in your own browser**, and its totals are also backed up through
+  **Chrome sync**, Chrome's own feature for keeping your data across your devices. AI Hours
+  has no server and no account, and it sends nothing to the developer or to anyone else.
 - There is no analytics, no tracking and no advertising.
 
 ## Where it runs
@@ -47,8 +48,20 @@ For each reply, AI Hours stores a small record in your browser's extension stora
 above, and a few technical flags about how the reply was measured. Your total is calculated
 from these records.
 
-This data never leaves your browser. It is not synced to other devices, and the developer
-cannot see it.
+The individual records never leave your browser, and the developer cannot see them.
+
+## Backup through Chrome sync
+
+So that your totals survive reinstalling the extension and appear on your other computers,
+AI Hours keeps a small summary in Chrome's sync storage (`chrome.storage.sync`): for this
+browser, the total time per assistant and per model, under a random identifier for this
+installation. No prompts, replies, conversation ids, timestamps of individual replies or account
+details are in it.
+
+Chrome stores and syncs this summary through your Google account, the same way it syncs your
+bookmarks and settings, and only if you are signed into Chrome with sync turned on. It is held
+by Google under your account, not by the developer, who has no access to it. If Chrome sync is
+off, the summary stays on this computer only.
 
 ## Sharing and selling
 
@@ -58,13 +71,17 @@ totals.
 
 ## Deleting your data
 
-Removing the extension from your browser deletes everything it stored.
+Removing the extension deletes everything it stored in your browser. The Chrome sync summary
+stays in your Google account (so a reinstall can restore your totals) until you clear it: in
+Chrome, open Settings → You and Google → Sync → "Review your synced data", and choose
+**Delete data**, or reset sync at https://chrome.google.com/sync. Note that this clears all of
+your Chrome sync data, not only AI Hours'.
 
 ## Changes to this policy
 
-If AI Hours ever starts sending data anywhere (for example, an optional sync between your own
-devices), this policy will be updated before that version is released, and the feature will say
-plainly what it sends.
+If AI Hours ever starts sending data anywhere else (for example, an optional sign-in that backs
+up every reply), this policy will be updated before that version is released, and the feature
+will say plainly what it sends.
 
 ## Contact
 

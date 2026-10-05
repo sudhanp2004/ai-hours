@@ -5,8 +5,9 @@ Enter until the reply finishes, added up across every chat. One number, like Spo
 minutes listened, but for AI.
 
 **Private by design.** AI Hours records *when* an AI worked, never *what* was said. It never
-reads or stores your prompts or the replies. Everything stays in your browser's local
-storage: there is no server, no account and no analytics.
+reads or stores your prompts or the replies. There is no server, no account and no analytics.
+Your totals are backed up through Chrome sync, so they survive reinstalling the extension and
+follow you to your other computers (when you're signed into Chrome with sync on).
 
 ## Supported sites
 

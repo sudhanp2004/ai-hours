@@ -10,9 +10,9 @@ const entries = (world) => manifest.content_scripts.filter((c) => (c.world || 'I
 
 test('permissions are minimal, and grant exactly the sites being measured', () => {
   assert.equal(manifest.manifest_version, 3);
-  // identity and alarms (1.1, sync) carry no install warning, so they never disable the
-  // extension for existing users on update.
-  assert.deepEqual(manifest.permissions, ['storage', 'unlimitedStorage', 'scripting', 'identity', 'alarms']);
+  // alarms (1.1: the Chrome-sync backup's once-a-minute write) carries no install warning, so
+  // it never disables the extension for existing users on update.
+  assert.deepEqual(manifest.permissions, ['storage', 'unlimitedStorage', 'scripting', 'alarms']);
   // The permission list and the measured sites are the same list: a site in one but not the
   // other would either ask for access we don't use, or measure a site we never asked about.
   const matches = [...new Set(manifest.content_scripts.flatMap((c) => c.matches))].sort();
@@ -137,4 +137,21 @@ test('every adapter on disk states whether it was verified, and a stub is never 
       assert.ok(!enabled.includes(f), `${f} is a stub and must not be in the manifest`);
     }
   }
+});
+
+// The privacy policy says nothing is sent to any server of ours. That holds only while no file
+// the extension loads knows such a server: bringing the optional sign-in back (src/sync.js) must
+// be a deliberate change, with PRIVACY.md and the store answers updated in the same commit.
+test('no loaded file talks to a server of ours (the optional sign-in is not shipped)', () => {
+  const loaded = new Set([manifest.background.service_worker, ...manifest.content_scripts.flatMap((c) => c.js)]);
+  const worker = fs.readFileSync(path.join(root, manifest.background.service_worker), 'utf8');
+  for (const [, imp] of worker.matchAll(/import '\.\/([^']+)'/g)) loaded.add('src/' + imp);
+  const html = fs.readFileSync(path.join(root, manifest.action.default_popup), 'utf8');
+  for (const [, src] of html.matchAll(/src="([^"]+)"/g)) loaded.add(path.normalize(path.join('popup', src)));
+  assert.ok(!loaded.has('src/sync.js'), 'sync.js is not loaded');
+  for (const f of loaded) {
+    const src = fs.readFileSync(path.join(root, f), 'utf8');
+    assert.doesNotMatch(src, /neon\.tech|googleapis|accounts\.google\.com/, `${f} names a server`);
+  }
+  assert.ok(!manifest.permissions.includes('identity'));
 });

@@ -33,7 +33,8 @@ Enter to the moment it finishes, and adds them up. Think of it as "minutes liste
 Private by design
 • AI Hours records when the AI worked, never what was said. Your prompts and the replies are
   never stored or sent anywhere.
-• Everything stays in your browser. No account, no server, no analytics, no tracking.
+• No account, no server of ours, no analytics, no tracking. Your totals are backed up with
+  Chrome sync, so they survive reinstalling and follow you to your other computers.
 • It runs only on the five chat sites above.
 
 Honest by design
@@ -70,8 +71,11 @@ model. It records only timing and the model's name, never the content of convers
 
 - **storage**
   ```
-  Saves the user's reply-timing records (site, model name, start and end times) locally in the
-  browser, so the total survives restarts. Nothing is synced or sent anywhere.
+  Saves the user's reply-timing records (site, model name, start and end times) locally, so the total survives restarts, and keeps a small summary of the totals per assistant and model in chrome.storage.sync, so they survive a reinstall and appear on the user's other computers through Chrome sync. Nothing is sent to the developer or any other server.
+  ```
+- **alarms**
+  ```
+  Schedules the Chrome-sync summary to be saved at most once a minute after the totals change, instead of on every streamed chunk, to stay within Chrome sync's write limits.
   ```
 - **unlimitedStorage**
   ```

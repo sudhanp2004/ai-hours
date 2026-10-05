@@ -62,7 +62,7 @@ const SRC = (f) => fs.readFileSync(path.join(__dirname, '..', 'extension', 'src'
 function load(over) {
   const { chrome, calls } = stubChrome(over);
   const ctx = vm.createContext({ chrome, console, crypto, URL, URLSearchParams, TextDecoder, atob, Date, fetch: over?.fetch ?? (async () => { throw new Error('offline'); }) });
-  for (const f of ['reconcile.js', 'manifest-match.js', 'sync.js', 'total.js']) {
+  for (const f of ['reconcile.js', 'manifest-match.js', 'total.js']) {
     vm.runInContext(SRC(f), ctx, { filename: f });
   }
   vm.runInContext(src, ctx, { filename: 'background.js' });
@@ -187,9 +187,7 @@ test('pendingByTab is the single source of the close rule', () => {
   assert.equal(out.a.outcome, 'pending');
   assert.equal(out.a.closedAt, T0);
 });
-// ---- sign-in and sync (spec §13)
-const CLIENT = '822593684452-t3f70ule6u8nfms79s9nl25h0snhe8st.apps.googleusercontent.com';
-const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+// ---- the Chrome-sync backup and the legacy import (spec §13)
 
 function memoryStore() {
   const data = {};
@@ -202,57 +200,9 @@ function memoryStore() {
     },
   };
 }
-const ask = (calls, msg, sender) => new Promise((resolve) => {
-  const handled = calls.messageListeners.map((fn) => fn({ __aih: 1, ...msg }, sender, resolve));
-  if (!handled.includes(true)) resolve(undefined);
-});
 
-test('a content script cannot press the sync buttons: only the extension\u2019s own pages can', async () => {
-  let launched = 0;
-  const { calls } = load({ launchWebAuthFlow: async () => { launched++; return ''; } });
-  const res = await ask(calls, { type: 'sync:wipe' }, { tab: { id: 3 }, id: 'ext-id' });
-  assert.equal(res, undefined);
-  assert.equal(await ask(calls, { type: 'sync:signIn' }, { id: 'another-extension' }), undefined);
-  assert.equal(launched, 0);
-});
 
-test('signing in keeps only the opaque Google id, puts the token in session storage, and schedules sync', async () => {
-  const local = memoryStore();
-  const session = memoryStore();
-  local.data['rec:a'] = { id: 'a', site: 'claude', start: Date.now() - 9000, end: Date.now() - 5000, outcome: 'completed', updatedMs: Date.now() - 5000 };
-  let asked;
-  const launchWebAuthFlow = async ({ url, interactive }) => {
-    asked = { url: new URL(url), interactive };
-    const nonce = asked.url.searchParams.get('nonce');
-    const token = `${b64({ alg: 'RS256' })}.${b64({ iss: 'https://accounts.google.com', aud: CLIENT, sub: 'g-123', nonce, exp: Date.now() / 1000 + 3600, email: 'x@y.z' })}.sig`;
-    return `https://ext-id.chromiumapp.org/#id_token=${token}`;
-  };
-  const { calls } = load({ launchWebAuthFlow, storage: { local: local.api, session: session.api } });
-  const res = await ask(calls, { type: 'sync:signIn' }, { id: 'ext-id' });
-  assert.equal(res.ok, true);
-  assert.equal(asked.interactive, true);
-  assert.equal(asked.url.searchParams.get('scope'), 'openid');
-  assert.deepEqual({ ...local.data['auth:user'] }, { sub: 'g-123' }, 'no email, no token on disk');
-  assert.ok(!JSON.stringify(local.data).includes('id_token') && !JSON.stringify(local.data).includes('x@y.z'));
-  assert.ok(session.data['auth:token'].token.includes('.'));
-  assert.ok('rec:a' in local.data['sync:dirty'], 'history from before sign-in is queued for upload');
-  assert.ok(calls.alarms.some(([name, o]) => name === 'aih-sync' && o.periodInMinutes === 5));
-  assert.equal(local.data['sync:status'].state, 'offline', 'no network in this test: it says so, and keeps the queue');
-});
 
-test('signing out forgets the account and the token, and stops the schedule; local history stays', async () => {
-  const local = memoryStore();
-  const session = memoryStore();
-  Object.assign(local.data, { 'auth:user': { sub: 'g' }, 'sync:dirty': { 'rec:a': 1 }, 'rec:a': { id: 'a' } });
-  session.data['auth:token'] = { token: 't', exp: Date.now() + 1e6 };
-  const { calls } = load({ storage: { local: local.api, session: session.api } });
-  await ask(calls, { type: 'sync:signOut' }, { id: 'ext-id' });
-  assert.equal(local.data['auth:user'], undefined);
-  assert.equal(session.data['auth:token'], undefined);
-  assert.ok(calls.alarms.some(([a, b]) => a === 'clear' && b === 'aih-sync'));
-  assert.deepEqual(local.data['rec:a'], { id: 'a' });
-  assert.equal(local.data['sync:status'].state, 'signed-out');
-});
 
 test('the synced summary: this install\u2019s totals per site, under its own device id, written only when changed', async () => {
   const local = memoryStore();

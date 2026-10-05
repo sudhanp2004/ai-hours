@@ -661,3 +661,12 @@ reinstalled the extension (uninstalling deletes `chrome.storage.local`). Now:
   Covers only users signed into Chrome with sync on; others keep local-only totals.
 - **Optional:** the Google sign-in + Neon full-history backup above, folded behind "Back up full
   history too…" in the popup.
+
+**1.1 as released (2026-10-05):** Chrome-sync backup only. The optional Google sign-in + Neon
+backup is not shipped: the user's first live attempt failed before the extension id was pinned,
+and rather than ship an unverified feature with an extra permission (`identity`) and a privacy
+policy that has to describe dormant upload code, it was taken out. `src/sync.js` and its tests
+remain; the worker and popup wiring are in git at commit 2124ba6. The Neon project stays
+provisioned (free tier, idle). A manifest test now fails if any loaded file names a server of
+ours, so bringing it back is a deliberate change made together with PRIVACY.md and the store's
+privacy answers.
