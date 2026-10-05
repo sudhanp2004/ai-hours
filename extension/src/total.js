@@ -201,6 +201,67 @@
     return { set, delete: remove, live, breakdown, activeCount: () => active.size };
   };
 
+  // ---- Chrome-sync backup (spec §13): one compact summary per install, in chrome.storage.sync.
+  // Chrome keeps it in the user's Google account, brings it back after a reinstall and copies
+  // it to their other computers, with no sign-in of ours. `sub` names the account this install
+  // uploads full records to (optional sign-in), so those replies are never counted twice.
+  ns.summaryOf = function summaryOf(records, now, { device, sub }) {
+    const sites = {};
+    for (const s of ns.breakdown(records, now).sites) {
+      sites[s.site] = {};
+      for (const m of s.models) sites[s.site][m.model ?? ''] = Math.floor(m.ms);
+    }
+    return { v: 1, device, sub: sub ?? null, at: now, sites };
+  };
+
+  // Stored as one chrome.storage.sync item per site (Chrome allows 8 KB per item). A site with
+  // an absurd number of models keeps its biggest and folds the rest into "not recorded" (''),
+  // so the total is always exact even if some names are not.
+  const MAX_MODELS = 60;
+  ns.summaryItems = function summaryItems(summary) {
+    const out = {};
+    for (const [site, models] of Object.entries(summary.sites)) {
+      const sorted = Object.entries(models).sort((a, b) => b[1] - a[1]);
+      const kept = {};
+      for (const [model, ms] of sorted.slice(0, MAX_MODELS)) kept[model.slice(0, 64)] = (kept[model.slice(0, 64)] ?? 0) + ms;
+      for (const [, ms] of sorted.slice(MAX_MODELS)) kept[''] = (kept[''] ?? 0) + ms;
+      out[`sum:${summary.device}:${site}`] = { v: 1, device: summary.device, sub: summary.sub, at: summary.at, site, models: kept };
+    }
+    return out;
+  };
+
+  // This install's own breakdown plus every other install's summary (whole, or per-site items). Skipped: this install's
+  // own summary, and summaries from installs uploading to the same account (their replies
+  // reach this one as records).
+  ns.combine = function combine(local, summaries, { device, sub }) {
+    const sites = new Map(local.sites.map((s) => [s.site, { ...s, models: new Map(s.models.map((m) => [m.model, { ...m }])) }]));
+    let ms = local.ms;
+    for (const sum of summaries) {
+      if (!sum || typeof sum !== 'object' || sum.v !== 1) continue;
+      const bySite = sum.sites ?? (typeof sum.site === 'string' ? { [sum.site]: sum.models } : null);
+      if (!bySite || typeof bySite !== 'object') continue;
+      if (sum.device === device || (sub && sum.sub === sub)) continue;
+      for (const [site, models] of Object.entries(bySite)) {
+        if (!models || typeof models !== 'object') continue;
+        for (const [model, v] of Object.entries(models)) {
+          if (!num(v) || v <= 0) continue;
+          let row = sites.get(site);
+          if (!row) sites.set(site, (row = { site, ms: 0, working: 0, models: new Map() }));
+          const key = model || null;
+          let m = row.models.get(key);
+          if (!m) row.models.set(key, (m = { model: key, ms: 0, working: 0 }));
+          m.ms += v, row.ms += v, ms += v;
+        }
+      }
+    }
+    const byMs = (a, b) => b.ms - a.ms;
+    return {
+      ms,
+      working: local.working,
+      sites: [...sites.values()].map((row) => ({ ...row, models: [...row.models.values()].sort(byMs) })).sort(byMs),
+    };
+  };
+
   ns.hasRecentHealthFlags = (records, now) =>
     records.some((r) => r.flags?.length > 0 && now - r.start < HEALTH_WINDOW_MS);
 

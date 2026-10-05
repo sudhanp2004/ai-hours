@@ -216,15 +216,35 @@
     else records.delete(key), ledger.delete(key);
   }
 
+  // Other installs' totals (other computers, earlier installs), from Chrome sync (spec §13).
+  // Until this install knows its own device id it can't tell its own summary apart from the
+  // others, so it counts none rather than itself twice.
+  let synced = { me: null, summaries: [], extraMs: 0 };
+  const EMPTY = { ms: 0, working: 0, sites: [] };
+  async function loadSynced() {
+    try {
+      const [l, sy] = await Promise.all([chrome.storage.local.get(['device:id', 'auth:user']), chrome.storage.sync.get(null)]);
+      const me = l['device:id'] ? { device: l['device:id'], sub: l['auth:user']?.sub ?? null } : null;
+      const summaries = me ? Object.entries(sy).filter(([k]) => k.startsWith('sum:')).map(([, v]) => v) : [];
+      synced = { me, summaries, extraMs: me ? ns.combine(EMPTY, summaries, me).ms : 0 };
+    } catch {
+      synced = { me: null, summaries: [], extraMs: 0 }; // no sync storage: this install's own totals only
+    }
+    render();
+  }
+
   function render() {
     if (!loaded) return;
     // Every tab's open replies, not just this one's: two tabs working means the count
     // genuinely moves twice as fast, and ×N says so (spec §6b).
     const { ms, working } = ledger.live(Date.now());
-    overlay.render(ms, working, () => ledger.breakdown(Date.now()));
+    const { me, summaries, extraMs } = synced;
+    overlay.render(ms + extraMs, working, () =>
+      me ? ns.combine(ledger.breakdown(Date.now()), summaries, me) : ledger.breakdown(Date.now()));
   }
 
   function onStorage(changes, area) {
+    if (area === 'sync' || (area === 'local' && ('device:id' in changes || 'auth:user' in changes))) loadSynced();
     if (area !== 'local') return;
     for (const [key, change] of Object.entries(changes)) {
       if (key.startsWith('rec:')) remember(key, change.newValue);
@@ -245,6 +265,7 @@
     for (const key of Object.keys(all)) if (key.startsWith('rec:') && !records.has(key)) remember(key, all[key]);
     loaded = true;
     render();
+    loadSynced();
 
     tracker = buildTracker();
     ticker = setInterval(() => tracker.tick(Date.now()), 5000);

@@ -9,6 +9,7 @@
 import './reconcile.js';
 import './manifest-match.js';
 import './sync.js';
+import './total.js'; // summaryOf/summaryItems for the Chrome-sync backup
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason !== 'install' && reason !== 'update') return;
@@ -159,6 +160,51 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     },
   }[msg.type];
   if (!act) return;
-  act().then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: String(e?.message ?? e) }));
+  act().then(
+    () => sendResponse({ ok: true }),
+    async (e) => {
+      const error = String(e?.message ?? e);
+      // The popup has usually closed by now (Google's window took focus), so the error is
+      // kept for the next time it opens.
+      if (msg.type === 'sync:signIn') await setStatus('sign-in-failed', { error });
+      sendResponse({ ok: false, error });
+    },
+  );
   return true;
 });
+
+// ---- Chrome-sync backup (spec §13): automatic, no sign-in. Each install keeps a compact
+// summary of its totals in chrome.storage.sync, which Chrome keeps in the user's Google account,
+// restores after a reinstall and copies to their other computers.
+const SUMMARY_ALARM = 'aih-summary';
+
+async function deviceId() {
+  let id = (await local.get('device:id'))['device:id'];
+  if (!id) await local.set({ 'device:id': (id = crypto.randomUUID()) });
+  return id;
+}
+
+async function writeSummary() {
+  try {
+    const [device, all, user] = [await deviceId(), await local.get(null), await signedInUser()];
+    const records = Object.entries(all).filter(([k]) => k.startsWith('rec:')).map(([, r]) => r);
+    const summary = globalThis.__aiHours.summaryOf(records, Date.now(), { device, sub: user?.sub ?? null });
+    const items = globalThis.__aiHours.summaryItems(summary);
+    // Chrome sync allows only so many writes an hour: skip it when nothing changed.
+    const fingerprint = JSON.stringify(Object.values(items).map((i) => [i.site, i.sub, i.models]));
+    if (all['summary:last'] === fingerprint) return;
+    await chrome.storage.sync.set(items);
+    await local.set({ 'summary:last': fingerprint });
+  } catch (e) {
+    console.warn('AI Hours: could not save the synced summary', e); // tried again on the next change
+  }
+}
+
+// At most once a minute after a record changes, so a streaming reply doesn't spend the quota.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !Object.keys(changes).some((k) => k.startsWith('rec:'))) return;
+  chrome.alarms.get(SUMMARY_ALARM).then((a) => a || chrome.alarms.create(SUMMARY_ALARM, { delayInMinutes: 1 }));
+});
+chrome.alarms.onAlarm.addListener((a) => a.name === SUMMARY_ALARM && writeSummary());
+chrome.runtime.onInstalled.addListener(() => deviceId().then(writeSummary));
+chrome.runtime.onStartup.addListener(() => writeSummary());

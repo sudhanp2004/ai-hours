@@ -31,24 +31,26 @@ function fakeDocument(selector) {
   const body = makeEl();
   body.isConnected = true; // a loaded page, so the pill reveals itself
   const listeners = {};
-  return {
+  const doc = {
     readyState: 'loading', // document_start, when content.js really runs
     listeners,
     addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
     removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((f) => f !== fn); },
     dispatchEvent(e) { for (const fn of [...(listeners[e.type] || [])]) fn(e); return true; },
     body,
-    createElement: () => ({ ...makeEl(), attachShadow: () => ({ innerHTML: '', querySelector: makeEl }) }),
+    // The pill's parts are remembered by selector, so a test can read what it shows.
+    createElement: () => ({ ...makeEl(), attachShadow: () => { const parts = {}; doc.pill = parts; return { innerHTML: '', querySelector: (sel) => (parts[sel] ??= makeEl()) }; } }),
     querySelector: () => null,
     querySelectorAll: () => [],
     documentElement: makeEl(),
   };
+  return doc;
 }
 
 // The adapter is normally loaded from sites/, which is where the manifest points. A test can
 // name different files to simulate a page whose adapter is for another site (see the hosts
 // guard below), so the load list is a parameter rather than a constant.
-function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname, readyState } = {}) {
+function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname, readyState, synced = {} } = {}) {
   const store = { ...stored };
   const sent = [];
   const listeners = { message: null, storage: null };
@@ -77,10 +79,11 @@ function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname, readyState
     runtime: { id: 'ext', lastError: null, sendMessage: (m, cb) => cb(tabId === null ? undefined : { tabId }) },
     storage: {
       local: {
-        get: async (k) => (k === null ? { ...store } : { [k]: store[k] }),
+        get: async (k) => (k === null ? { ...store } : Object.fromEntries([].concat(k).filter((x) => x in store).map((x) => [x, store[x]]))),
         set: async (obj) => { Object.assign(store, obj); sent.push(obj); },
       },
       onChanged: { addListener: (fn) => (listeners.storage = fn), removeListener() {} },
+      sync: { get: async () => ({ ...synced }) },
     },
   };
   const context = vm.createContext(ctx);
@@ -385,4 +388,25 @@ test('a copy injected after the page loaded does not pair: a page could answer i
   const { paired } = setup({ readyState: 'interactive' });
   await settle();
   assert.equal(paired(), false);
+});
+
+// ---- the Chrome-sync backup (spec §13)
+test('other installs\u2019 synced totals are added to the pill; this install\u2019s own summary is not', async () => {
+  const stored = { 'device:id': 'me', 'rec:a': rec({ id: 'a', start: T0 - 9000, end: T0 - 4000, outcome: 'completed' }) };
+  const synced = {
+    'sum:me:chatgpt': { v: 1, device: 'me', sub: null, at: T0, site: 'chatgpt', models: { '': 5000 } },
+    'sum:laptop:claude': { v: 1, device: 'laptop', sub: null, at: T0, site: 'claude', models: { 'claude-opus-5-5': 20000 } },
+  };
+  const { doc } = setup({ stored, synced });
+  await settle();
+  await settle();
+  assert.equal(doc.pill['.time'].textContent, '25s', '5 s here + 20 s from the laptop; the 5 s summary of this install is not added again');
+});
+
+test('without a device id yet, no synced summary counts: it could be this install\u2019s own', async () => {
+  const synced = { 'sum:x:claude': { v: 1, device: 'x', sub: null, at: T0, site: 'claude', models: { m: 20000 } } };
+  const { doc } = setup({ synced });
+  await settle();
+  await settle();
+  assert.equal(doc.pill['.time'].textContent, '0s');
 });

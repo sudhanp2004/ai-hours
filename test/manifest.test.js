@@ -68,6 +68,7 @@ test('the service worker is a module, and imports the files it needs', () => {
   const worker = fs.readFileSync(path.join(root, manifest.background.service_worker), 'utf8');
   assert.match(worker, /import '\.\/reconcile\.js'/);
   assert.match(worker, /import '\.\/manifest-match\.js'/);
+  assert.match(worker, /import '\.\/total\.js'/, 'the synced summary is computed in the worker');
 });
 
 // Chrome injects a file listed in two content_scripts entries only once per frame, so a

@@ -20,7 +20,7 @@ function stubChrome(over = {}) {
   const calls = { injected: [], removed: [], sent: [], queries: [], alarms: [] };
   const chrome = {
     runtime: {
-      onInstalled: { addListener: (fn) => (calls.onInstalled = fn) },
+      onInstalled: { addListener: (fn) => { calls.onInstalled ??= fn; (calls.installListeners ||= []).push(fn); } },
       // Two listeners: the tab-id answer (first) and the popup's sync buttons.
       onMessage: { addListener: (fn) => { calls.onMessage ??= fn; (calls.messageListeners ||= []).push(fn); } },
       onStartup: { addListener: (fn) => (calls.onStartup = fn) },
@@ -41,9 +41,11 @@ function stubChrome(over = {}) {
       local: { get: async () => ({}), set: async () => {}, remove: async () => {} },
       session: { get: async () => ({}), set: async () => {}, remove: async () => {} },
       onChanged: { addListener: (fn) => (calls.onChanged = fn) },
+      sync: { get: async () => ({}), set: async (o) => (calls.synced = { ...calls.synced, ...o }) },
       ...over.storage,
     },
     alarms: {
+      get: async () => undefined,
       create: (name, o) => calls.alarms.push([name, o]),
       clear: async (name) => calls.alarms.push(['clear', name]),
       onAlarm: { addListener: (fn) => (calls.onAlarm = fn) },
@@ -60,7 +62,7 @@ const SRC = (f) => fs.readFileSync(path.join(__dirname, '..', 'extension', 'src'
 function load(over) {
   const { chrome, calls } = stubChrome(over);
   const ctx = vm.createContext({ chrome, console, crypto, URL, URLSearchParams, TextDecoder, atob, Date, fetch: over?.fetch ?? (async () => { throw new Error('offline'); }) });
-  for (const f of ['reconcile.js', 'manifest-match.js', 'sync.js']) {
+  for (const f of ['reconcile.js', 'manifest-match.js', 'sync.js', 'total.js']) {
     vm.runInContext(SRC(f), ctx, { filename: f });
   }
   vm.runInContext(src, ctx, { filename: 'background.js' });
@@ -250,4 +252,23 @@ test('signing out forgets the account and the token, and stops the schedule; loc
   assert.ok(calls.alarms.some(([a, b]) => a === 'clear' && b === 'aih-sync'));
   assert.deepEqual(local.data['rec:a'], { id: 'a' });
   assert.equal(local.data['sync:status'].state, 'signed-out');
+});
+
+test('the synced summary: this install\u2019s totals per site, under its own device id, written only when changed', async () => {
+  const local = memoryStore();
+  local.data['rec:a'] = { id: 'a', site: 'claude', start: Date.now() - 9000, end: Date.now() - 4000, outcome: 'completed', server: { model: 'claude-opus-5-5' } };
+  const synced = [];
+  const sync = { get: async () => ({}), set: async (o) => synced.push(o) };
+  const { calls } = load({ storage: { local: local.api, sync } });
+  calls.installListeners.forEach((fn) => fn({ reason: 'install' }));
+  await new Promise((r) => setTimeout(r, 20));
+  const device = local.data['device:id'];
+  assert.match(device, /^[0-9a-f-]{36}$/);
+  assert.equal(synced.length, 1);
+  const item = synced[0][`sum:${device}:claude`];
+  assert.equal(item.models['claude-opus-5-5'], 5000);
+  assert.equal(item.sub, null);
+  calls.onAlarm({ name: 'aih-summary' });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(synced.length, 1, 'nothing changed, so nothing is written: Chrome sync limits writes');
 });
