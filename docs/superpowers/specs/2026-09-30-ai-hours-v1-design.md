@@ -646,3 +646,18 @@ README's "no server" line becomes "no server unless you sign in".
 2. A Google Cloud OAuth client, type "Web application", authorized redirect URI
    `https://<extension-id>.chromiumapp.org/`, consent screen "AI Hours". Its client id (not a
    secret) goes in the extension.
+
+**Revised 2026-10-05 (user decision): Chrome sync first, sign-in optional.** The user found a
+sign-in step too much friction for "don't lose my numbers", and lost history when an id change
+reinstalled the extension (uninstalling deletes `chrome.storage.local`). Now:
+- **Default, automatic:** each install writes a summary (totals per site and model) to
+  `chrome.storage.sync` as `sum:<device-id>:<site>`, one item per site (8 KB item limit; past 60
+  models a site folds its rarest into "not recorded", keeping the total exact), at most once a
+  minute after a change and only when it changed (Chrome sync write quotas). Chrome keeps these in
+  the user's Google account, restores them after a reinstall and copies them to other computers.
+  Displayed total = this install's live ledger + `combine(...)` of every other install's
+  summaries, skipping its own and those whose `sub` equals this install's signed-in account
+  (their replies arrive as records). Without a device id an install counts no summaries.
+  Covers only users signed into Chrome with sync on; others keep local-only totals.
+- **Optional:** the Google sign-in + Neon full-history backup above, folded behind "Back up full
+  history too…" in the popup.
