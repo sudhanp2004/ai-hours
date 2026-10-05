@@ -30,7 +30,13 @@ const crc32 = (b) => { let c = 0xffffffff; for (const x of b) c = crcTable[(c ^ 
 const local = [], central = [];
 let offset = 0;
 for (const name of [...files].sort()) {
-  const data = fs.readFileSync(path.join(root, name));
+  let data = fs.readFileSync(path.join(root, name));
+  // `key` pins an unpacked copy to the store's extension id (so Google sign-in works locally);
+  // the store assigns the id itself, so the uploaded manifest leaves it out.
+  if (name === 'manifest.json') {
+    const { key, ...rest } = JSON.parse(data);
+    data = Buffer.from(JSON.stringify(rest, null, 2) + '\n');
+  }
   const comp = zlib.deflateRawSync(data);
   const nameBuf = Buffer.from(name.split(path.sep).join('/'));
   const crc = crc32(data);

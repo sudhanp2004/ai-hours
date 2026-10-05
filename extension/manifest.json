@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "AI Hours",
   "version": "1.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuYWG5XTns6rlNJ1iAhNJxIJ+BP2cupBxbJQg4dQ63BW0gm+LsGv6L0JWQIZbFh6HdNpcUcvg3Q4n1vj/xw3ss0zzVDYX626vptc+votfhjDNmOEgOm7RgLA/PMTHuR1+0Mr93R6BvZUKu1p7xpADj/TC3fzdxS2tDKCUFNN+RS0GIKUtwmEAP2VpMpQ+sITbWlorbiSjEGVP6I0jH9ifH1F2rpFiAxjEhS5RznhpOvciHrEE+66EB3eaqw6XIUShRFmuLVcj31opWB9rJeUXuu81wkVhBCQkH2Lg/U+QblU2cv6ytJRbgitH1SSEsCQGJiwEz1aZG3JU8zkP45M8BQIDAQAB",
   "description": "Counts how long AI has worked for you. Records when AI works, never what was said.",
   "icons": {
     "16": "icons/icon16.png",
