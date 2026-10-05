@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Hours",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Counts how long AI has worked for you. Records when AI works, never what was said.",
   "icons": {
     "16": "icons/icon16.png",
@@ -12,7 +12,9 @@
   "permissions": [
     "storage",
     "unlimitedStorage",
-    "scripting"
+    "scripting",
+    "identity",
+    "alarms"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",

@@ -48,3 +48,6 @@ ALTER TABLE public.records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.records ALTER COLUMN user_id SET DEFAULT (auth.user_id());
 CREATE POLICY "own rows" ON public.records FOR ALL TO authenticated
   USING ((SELECT auth.user_id()) = user_id) WITH CHECK ((SELECT auth.user_id()) = user_id);
+
+-- 4. Incremental pulls ask for one user's rows changed since a time, in that order.
+CREATE INDEX records_user_updated ON public.records (user_id, updated_ms, id);

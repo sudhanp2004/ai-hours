@@ -48,6 +48,7 @@
       // Seen live, the model came from the stream; otherwise the saved turn names it.
       server: { ...rec.server, ...(rec.server?.model == null && t.model ? { model: t.model } : {}) },
       outcome: 'recovered',
+      updatedMs: now, // sync: the newest copy of a record wins (spec §13)
       end: null, // the duration lives in recovered.durationMs; end stays unknown
       recovered: {
         at: now,
@@ -67,7 +68,7 @@
     const out = {};
     for (const r of records) {
       if (r.tabId !== tabId || r.end != null || r.outcome === 'pending' || r.recovered) continue;
-      out[r.id] = { ...r, outcome: 'pending', closedAt: now };
+      out[r.id] = { ...r, outcome: 'pending', closedAt: now, updatedMs: now };
     }
     return out;
   }

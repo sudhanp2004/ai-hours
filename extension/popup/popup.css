@@ -16,3 +16,12 @@ main { width: 260px; padding: 20px; }
 .warn { color: var(--warn); }
 main { width: 280px; }
 .breakdown { margin: 14px -6px 0; }
+
+.account { margin-top: 16px; padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); }
+.account .note { margin-top: 0; }
+.acct-buttons, .confirm { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.account button { font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--fg) 20%, transparent); background: transparent; color: var(--fg); }
+.account button.primary { background: #10a37f; border-color: #10a37f; color: #fff; }
+.account button.danger { color: #c0392b; }
+.account button:disabled { opacity: 0.6; cursor: default; }

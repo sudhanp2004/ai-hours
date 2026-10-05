@@ -10,7 +10,9 @@ const entries = (world) => manifest.content_scripts.filter((c) => (c.world || 'I
 
 test('permissions are minimal, and grant exactly the sites being measured', () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.permissions, ['storage', 'unlimitedStorage', 'scripting']);
+  // identity and alarms (1.1, sync) carry no install warning, so they never disable the
+  // extension for existing users on update.
+  assert.deepEqual(manifest.permissions, ['storage', 'unlimitedStorage', 'scripting', 'identity', 'alarms']);
   // The permission list and the measured sites are the same list: a site in one but not the
   // other would either ask for access we don't use, or measure a site we never asked about.
   const matches = [...new Set(manifest.content_scripts.flatMap((c) => c.matches))].sort();

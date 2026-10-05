@@ -53,7 +53,7 @@
     if (!orphans.length) return;
     resumable = orphans.map((r) => r.id);
     const update = {};
-    for (const r of orphans) update['rec:' + r.id] = { ...r, outcome: 'pending', closedAt: Date.now() };
+    for (const r of orphans) update['rec:' + r.id] = { ...r, outcome: 'pending', closedAt: Date.now(), updatedMs: Date.now() };
     try {
       await chrome.storage.local.set(update);
     } catch (e) {
@@ -69,6 +69,7 @@
       write(rec) {
         // Orphaned by an extension update: the re-injected copy takes over.
         if (!chrome.runtime?.id) return stop();
+        rec.updatedMs = Date.now(); // sync: the newest copy of a record wins (spec §13)
         // Count it immediately, so the counter never dips between the stream ending and the
         // storage change event arriving.
         remember('rec:' + rec.id, structuredClone(rec));
