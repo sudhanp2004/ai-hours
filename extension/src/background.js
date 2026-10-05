@@ -206,5 +206,27 @@ chrome.storage.onChanged.addListener((changes, area) => {
   chrome.alarms.get(SUMMARY_ALARM).then((a) => a || chrome.alarms.create(SUMMARY_ALARM, { delayInMinutes: 1 }));
 });
 chrome.alarms.onAlarm.addListener((a) => a.name === SUMMARY_ALARM && writeSummary());
-chrome.runtime.onInstalled.addListener(() => deviceId().then(writeSummary));
-chrome.runtime.onStartup.addListener(() => writeSummary());
+// ---- One-time import of history saved from an earlier copy of the extension, e.g. an unpacked
+// copy loaded before its id changed (chrome.storage belongs to an id, so a new id starts empty).
+// Put the records, as {"rec:<id>": record}, in extension/import/legacy-history.json; it is kept
+// out of git and out of the store package. Never overwrites a record already here.
+async function importLegacy() {
+  if ((await local.get('import:legacyDone'))['import:legacyDone']) return;
+  let data;
+  try {
+    const res = await fetch(chrome.runtime.getURL('import/legacy-history.json'));
+    if (!res.ok) return;
+    data = await res.json();
+  } catch {
+    return; // no file: the normal case
+  }
+  const keys = Object.keys(data ?? {}).filter((k) => k.startsWith('rec:') && data[k] && typeof data[k] === 'object');
+  const here = await local.get(keys);
+  const add = {};
+  for (const k of keys) if (!here[k]) add[k] = { ...data[k], tabId: null, updatedMs: data[k].updatedMs ?? Date.now() };
+  if (Object.keys(add).length) await local.set(add);
+  await local.set({ 'import:legacyDone': Date.now() });
+}
+
+chrome.runtime.onInstalled.addListener(() => importLegacy().then(deviceId).then(writeSummary));
+chrome.runtime.onStartup.addListener(() => importLegacy().then(writeSummary));

@@ -10,3 +10,6 @@ Gemini_Generated_Image_*.png
 
 # Store packages (npm run package)
 dist/
+
+# Personal history moved from an older install (background.js importLegacy); never committed
+extension/import/

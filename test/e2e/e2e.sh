@@ -15,5 +15,7 @@ google-chrome --headless=new --no-sandbox --disable-gpu --user-data-dir="$TMP/pr
   --enable-unsafe-extension-debugging --ignore-certificate-errors \
   --host-resolver-rules="MAP chatgpt.com 127.0.0.1:8443" about:blank >/dev/null 2>&1 & CH=$!
 for i in $(seq 1 30); do curl -s http://127.0.0.1:9333/json/version >/dev/null && break; sleep 0.3; done
+# A clean copy: a personal import/ folder (legacy history) must not leak into the check.
+mkdir -p "$TMP/ext" && cp -r "$EXT"/. "$TMP/ext"/ && rm -rf "$TMP/ext/import" && EXT="$TMP/ext"
 echo "extension: $EXT"
 timeout 90 node "$HERE/run.mjs" "$EXT"

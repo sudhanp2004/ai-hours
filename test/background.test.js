@@ -23,7 +23,7 @@ function stubChrome(over = {}) {
       onInstalled: { addListener: (fn) => { calls.onInstalled ??= fn; (calls.installListeners ||= []).push(fn); } },
       // Two listeners: the tab-id answer (first) and the popup's sync buttons.
       onMessage: { addListener: (fn) => { calls.onMessage ??= fn; (calls.messageListeners ||= []).push(fn); } },
-      onStartup: { addListener: (fn) => (calls.onStartup = fn) },
+      onStartup: { addListener: (fn) => { const prev = calls.onStartup; calls.onStartup = prev ? (...a) => (prev(...a), fn(...a)) : fn; } },
       id: 'ext-id',
       getManifest: () => ({ content_scripts: [{ matches: ['https://chatgpt.com/*'], js: ['a.js'] }, { matches: ['https://chatgpt.com/*'], js: ['b.js'] }] }),
       lastError: null,
@@ -271,4 +271,42 @@ test('the synced summary: this install\u2019s totals per site, under its own dev
   calls.onAlarm({ name: 'aih-summary' });
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(synced.length, 1, 'nothing changed, so nothing is written: Chrome sync limits writes');
+});
+
+// A one-time import of history saved from an earlier copy of the extension (one loaded before
+// its id changed): extension/import/legacy-history.json, kept out of git and of the store package.
+test('legacy history is imported once, never over records already here, and leaves no tab ties', async () => {
+  const local = memoryStore();
+  local.data['rec:b'] = { id: 'b', site: 'claude', start: 5, end: 9, outcome: 'completed', note: 'local copy wins' };
+  const legacy = {
+    'rec:a': { id: 'a', site: 'gemini', tabId: 7, start: 1, end: 3, outcome: 'completed' },
+    'rec:b': { id: 'b', site: 'claude', start: 5, end: 9, outcome: 'completed' },
+    'device:id': 'not a record',
+  };
+  let fetched = 0;
+  const fetch = async (url) => {
+    fetched++;
+    assert.match(String(url), /import\/legacy-history\.json$/);
+    return new Response(JSON.stringify(legacy), { headers: { 'content-type': 'application/json' } });
+  };
+  const { calls } = load({ fetch, storage: { local: local.api }, runtime: { getURL: (p) => `chrome-extension://ext-id/${p}` } });
+  calls.installListeners.forEach((fn) => fn({ reason: 'update' }));
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(local.data['rec:a'].site, 'gemini');
+  assert.equal(local.data['rec:a'].tabId, null, 'not tied to a tab of this browser session');
+  assert.equal(local.data['rec:b'].note, 'local copy wins');
+  assert.equal(local.data['device:id'] === 'not a record', false, 'only records are imported');
+  assert.ok(local.data['import:legacyDone']);
+  calls.onStartup();
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(fetched, 1, 'imported once');
+});
+
+test('no legacy file (every normal install): nothing happens', async () => {
+  const local = memoryStore();
+  const fetch = async () => { throw new TypeError('Failed to fetch'); };
+  const { calls } = load({ fetch, storage: { local: local.api }, runtime: { getURL: (p) => `chrome-extension://ext-id/${p}` } });
+  calls.installListeners.forEach((fn) => fn({ reason: 'install' }));
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(local.data['import:legacyDone'], undefined, 'a file added later still gets imported');
 });
