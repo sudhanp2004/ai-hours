@@ -670,3 +670,21 @@ remain; the worker and popup wiring are in git at commit 2124ba6. The Neon proje
 provisioned (free tier, idle). A manifest test now fails if any loaded file names a server of
 ours, so bringing it back is a deliberate change made together with PRIVACY.md and the store's
 privacy answers.
+
+**Live test before upload (2026-10-06).** Each site, signed in, driven over CDP in a separate
+Chrome: a reply that finishes, one stopped after 4 s, and a reload mid-reply. Finish and stop
+were one correct record everywhere. A reload mid-reply was a double count on Perplexity, ChatGPT
+and DeepSeek: the reload aborted the request, which ended the record as an error, and the
+reloaded page counted the still-running reply again as a DOM-only record. Fixed:
+- `main-world.js` posts no error end once the page is going (`pagehide`), so the record stays
+  open for the next page in the tab.
+- The tracker hands a stop button that nothing on this page sent, seen within 30 s of the load,
+  the tab's open orphan (`resume` → `takeOrphan`); its end is the button's going. claude.ai's
+  timeline resume still works, and takes over from the button if the button got there first.
+- ChatGPT's saved conversation gives a turn still being written an end, so conversation
+  recovery of this page's own orphans waits until the resume window has passed.
+- DeepSeek follow-ups send `model_type: null`; the model now also comes from the reply's
+  opening event.
+After the fix, all three tests are one correct record on all five sites, the reload case flagged
+`resumed`. Known: Gemini sometimes drops a message sent seconds after a Stop (the question shows,
+then disappears) while its request runs ~5 s with a 200; that time counts, flagged `dom-missing`.

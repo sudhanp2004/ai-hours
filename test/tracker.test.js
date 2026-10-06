@@ -279,6 +279,94 @@ test('a picked-up reply claims the stop button already showing on the new page: 
   assert.equal(latest('old').source, 'fetch+dom');
 });
 
+// ---- the same, with nothing but the stop button to go on (Perplexity, ChatGPT, DeepSeek): the
+// reload aborts the request, and the new page sees the reply running but never sees it sent.
+function resumable(rec = orphan()) {
+  const writes = [];
+  const asked = [];
+  let left = rec;
+  const tracker = createTracker({
+    site: 'chatgpt', tabId: 7, newId: () => 'dom-1', write: (r) => writes.push(structuredClone(r)),
+    resume: (t) => (asked.push(t), [left, (left = null)][0]),
+  });
+  const show = (t) => { tracker.domRaw(true, t); tracker.confirm(t + 350); };
+  const hide = (t) => { tracker.domRaw(false, t); tracker.confirm(t + 350); };
+  const latest = (id) => writes.filter((r) => r.id === id).at(-1);
+  return { tracker, writes, asked, show, hide, latest };
+}
+
+test('a stop button nothing here sent takes over the previous page\'s reply, ended when it goes', () => {
+  const { tracker, writes, asked, show, hide, latest } = resumable();
+  show(9000);
+  tracker.tick(12000);
+  assert.deepEqual(asked, [9000], 'asked with the time the button showed');
+  assert.equal(latest('old').end, null);
+  assert.equal(latest('old').outcome, 'unknown', 'running again, no longer pending');
+  tracker.tick(17000);
+  assert.equal(latest('old').lastSeen, 17000, 'kept alive while its button shows');
+  hide(20000);
+  tracker.tick(40000);
+  assert.deepEqual([...new Set(writes.map((w) => w.id))], ['old'], 'no dom-only record');
+  const r = latest('old');
+  assert.equal(r.start, 1000, 'measured from the original send, across the reload');
+  assert.equal(r.end, 20000);
+  assert.equal(r.outcome, 'completed');
+  assert.equal(r.source, 'fetch+dom');
+  assert.ok(r.flags.includes('resumed'));
+});
+
+test('a resumed reply whose button went before the tick is ended at the button', () => {
+  const { tracker, writes, show, hide, latest } = resumable();
+  show(9000);
+  hide(11000);
+  tracker.tick(14000);
+  assert.deepEqual([...new Set(writes.map((w) => w.id))], ['old']);
+  assert.equal(latest('old').end, 11000);
+});
+
+test('a stop button for a reply sent from this page never takes over an orphan', () => {
+  const { tracker, writes, asked, show, hide } = resumable();
+  tracker.onSignal({ type: 'start', localId: 'a', t: 9000 });
+  show(9050);
+  tracker.tick(12000);
+  hide(15000);
+  tracker.onSignal({ type: 'end', localId: 'a', t: 15000, lastChunk: 15000, outcome: 'completed' });
+  tracker.tick(30000);
+  assert.deepEqual(asked, []);
+  assert.deepEqual([...new Set(writes.map((w) => w.id))], ['a']);
+});
+
+test('with no orphan to take, an unsent stop button is still a dom-only record', () => {
+  const { tracker, writes, show, hide, latest } = resumable(null);
+  show(9000);
+  hide(11000);
+  tracker.tick(25000);
+  assert.equal(latest('dom-1').source, 'dom-only');
+  assert.deepEqual([...new Set(writes.map((w) => w.id))], ['dom-1']);
+});
+
+test('a stop press on a resumed reply ends it as stopped', () => {
+  const { tracker, show, hide, latest } = resumable();
+  show(9000);
+  tracker.tick(12000);
+  tracker.onSignal({ type: 'stop', t: 13000 });
+  hide(13100);
+  assert.equal(latest('old').end, 13000);
+  assert.equal(latest('old').outcome, 'stopped');
+});
+
+test('if the stop button took the reply first, claude\'s timeline resume hands it to the stream', () => {
+  const { tracker, writes, show, hide, latest } = resumable();
+  show(9000);
+  tracker.tick(12000);
+  tracker.adopt('L2', null, 12500); // content.js: no orphan left to give
+  hide(20000);
+  assert.equal(latest('old').end, null, 'the button no longer ends it: the timeline does');
+  tracker.onSignal({ type: 'end', localId: 'L2', t: 20100, lastChunk: 20100, outcome: 'completed' });
+  assert.equal(latest('old').end, 20100);
+  assert.deepEqual([...new Set(writes.map((w) => w.id))], ['old']);
+});
+
 test('a picked-up reply also claims a stop button that appears just after it', () => {
   const { tracker, writes, sig, show, hide } = setup();
   tracker.adopt('L2', orphan(), 9000);

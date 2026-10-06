@@ -65,6 +65,12 @@
   // them may still be running on the server, and this page can take it over (onResume).
   let resumable = [];
   const RESUME_WITHIN_MS = 10 * 60 * 1000;
+  // A resumed reply's stop button shows as the reloaded page draws. Past this, a stop button
+  // nothing here sent is not the previous page's reply.
+  const loadedAt = Date.now();
+  const RESUME_AFTER_LOAD_MS = 30 * 1000;
+  // Recovery waits out that window and the tick that may still act on it (every 5 s).
+  const RECOVER_AFTER_LOAD_MS = RESUME_AFTER_LOAD_MS + 10 * 1000;
 
   // A page that loads mid-reply (reload, or ChatGPT's own navigation) leaves records from
   // the previous document behind. They can no longer be watched, so treat them as a close:
@@ -94,6 +100,7 @@
       tabKey,
       pairAfterMs: site.pairAfterMs,
       newId: () => crypto.randomUUID(),
+      resume: (t) => (t - loadedAt < RESUME_AFTER_LOAD_MS ? takeOrphan(t) : null),
       write(rec) {
         // Orphaned by an extension update: the re-injected copy takes over.
         if (!chrome.runtime?.id) return stop();
@@ -166,17 +173,27 @@
 
   // Opening a chat loads its conversation. If one of our records lost its tab (closed,
   // reloaded, or the browser quit), finish it now from the server's own timestamps (spec §6b).
-  function onConversation({ turns }) {
+  function onConversation({ turns }, deferred = false) {
     if (!Array.isArray(turns)) return;
     const done = [];
     const now = Date.now();
+    let wait = false;
     for (const rec of records.values()) {
       // Only records no tab is measuring. A reply still streaming in another tab is that
       // tab's to finish, and matching it here would rewrite a record still being measured.
       if (!ns.isRecoverable(rec, now)) continue;
+      // The previous page's reply may still be running, and this page may yet take it over
+      // from its stop button (takeOrphan). A turn still being written already has an end in
+      // ChatGPT's saved conversation, so recovering it now would count it twice (seen live,
+      // 2026-10-06). It is recovered once that chance has passed.
+      if (!deferred && resumable.includes(rec.id) && now - loadedAt < RECOVER_AFTER_LOAD_MS) {
+        wait = true;
+        continue;
+      }
       const turn = ns.matchTurn(rec, turns);
       if (turn) done.push(ns.recover(rec, turn, now));
     }
+    if (wait) setTimeout(() => onConversation({ turns }, true), RECOVER_AFTER_LOAD_MS - (now - loadedAt));
     if (!done.length) return;
     const update = {};
     for (const r of done) {
@@ -189,15 +206,20 @@
   // This page sees a reply running that it did not send: the refresh happened mid-reply.
   // Hand it the newest record the previous page left, if that one is recent and still open.
   // No orphan means the reply was sent from elsewhere, and it is not ours to count.
-  function onResume({ localId, t }) {
-    const candidates = resumable
+  function takeOrphan(t) {
+    const rec = resumable
       .map((id) => records.get('rec:' + id))
       .filter((r) => r && r.end == null && !r.recovered && t - (r.lastSeen ?? r.start) < RESUME_WITHIN_MS)
-      .sort((a, b) => b.start - a.start);
-    const rec = candidates[0];
-    if (!rec) return;
+      .sort((a, b) => b.start - a.start)[0];
+    if (!rec) return null;
     resumable = resumable.filter((id) => id !== rec.id);
-    tracker.adopt(localId, rec, t);
+    return rec;
+  }
+
+  // claude.ai's timeline says so outright. If the stop button got there first (tracker
+  // tick), the tracker hands that reply to the timeline instead.
+  function onResume({ localId, t }) {
+    tracker.adopt(localId, takeOrphan(t), t);
   }
 
   // Chat pages change the DOM many times a second while a reply streams, so the stop-button

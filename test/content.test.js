@@ -50,7 +50,8 @@ function fakeDocument(selector) {
 // The adapter is normally loaded from sites/, which is where the manifest points. A test can
 // name different files to simulate a page whose adapter is for another site (see the hosts
 // guard below), so the load list is a parameter rather than a constant.
-function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname, readyState, synced = {}, session = {}, tabIdAfter = 0 } = {}) {
+// later: an array to collect timers in, for a test to fire itself; by default they run at once.
+function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname, readyState, synced = {}, session = {}, tabIdAfter = 0, later = null } = {}) {
   const store = { ...stored };
   let asks = 0;
   const sent = [];
@@ -58,7 +59,7 @@ function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname, readyState
   const ctx = {
     console,
     crypto: { randomUUID: () => 'uuid-' + sent.length },
-    setTimeout: (fn) => fn(),
+    setTimeout: later ? (fn, ms) => later.push({ fn, ms }) : (fn) => fn(),
     clearTimeout() {},
     setInterval: () => 0,
     clearInterval() {},
@@ -336,6 +337,26 @@ test('an orphan is adopted once, and only if its last sign of life was minutes a
   send(context, { type: 'resume', localId: 'L2', t: T0 });
   await settle();
   assert.equal(store['rec:old'].outcome, 'pending', 'too old to be the reply now running');
+});
+
+// A refresh mid-reply on ChatGPT: the reloaded page loads the conversation, whose turn still
+// being written already has an end. The reply is this page's to take over from its stop
+// button, so recovery waits until that chance has passed (seen live, 2026-10-06).
+test('this tab\'s own orphan is not recovered from the conversation while it may be resumed', async () => {
+  const later = [];
+  const own = { ...PENDING, id: 'own', tabId: 7, outcome: 'unknown', lastSeen: T0 - 1000 };
+  const { context, store, send, listeners } = setup({ stored: { 'rec:own': own, 'rec:p': PENDING }, later });
+  await settle();
+  listeners.storage({ 'rec:own': { newValue: store['rec:own'] } }, 'local'); // the orphan close, as Chrome reports it
+  send(context, { type: 'conversation', turns: TURNS });
+  await settle();
+  assert.equal(store['rec:own'].outcome, 'pending', 'left for the stop button to take over');
+  assert.equal(store['rec:p'].outcome, 'recovered', 'another tab\'s record is recovered at once');
+  const timer = later.find((x) => x.ms >= 30000);
+  assert.ok(timer, 'recovery is tried again once the window has passed');
+  timer.fn();
+  await settle();
+  assert.equal(store['rec:own'].outcome, 'recovered', 'not taken over, so recovered after all');
 });
 
 test('no tab id means no orphan cleanup, and nothing is invented', async () => {

@@ -47,7 +47,15 @@
     listen.call(doc, 'DOMContentLoaded', disarm, { once: true });
     hello();
   }
-  const post = (type, payload) => dispatch.call(channel, new CE('aihours:signal', { detail: stringify({ __aih: 1, type, ...payload }) }));
+  // A reload or a navigation aborts the page's requests as it goes. That is not the reply
+  // failing: the server goes on writing it, and the next page in this tab takes the record
+  // over (content.js, takeOrphan). So once the page is going, an error end is not posted.
+  let leaving = false;
+  window.addEventListener?.('pagehide', () => (leaving = true), true);
+  const post = (type, payload) => {
+    if (leaving && type === 'end' && payload.outcome === 'error') return;
+    dispatch.call(channel, new CE('aihours:signal', { detail: stringify({ __aih: 1, type, ...payload }) }));
+  };
   // How often a streaming reply says "still here". Other tabs count it live from this, and
   // each one becomes a storage write there, so it is throttled well above the chunk rate.
   const aliveEvery = () => ns().site?.aliveEveryMs ?? 2000;

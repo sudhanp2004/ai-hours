@@ -52,6 +52,39 @@ test('send to loadend is one completed reply, with its model; the prompt never c
   assert.ok(!JSON.stringify(posts).includes(SECRET));
 });
 
+// Seen live 2026-10-06: a follow-up's request has model_type null, and the reply names it.
+const OPEN = 'data: {"request_message_id":3,"response_message_id":4,"model_type":"default"}\n\n'
+  + 'data: {"updated_at":1791308504.14}\n\n';
+const RESPONSE = (thinking) => `data: {"v":{"response":{"message_id":4,"parent_id":3,"model":"","role":"ASSISTANT","thinking_enabled":${thinking},"status":"WIP","fragments":[{"id":2,"type":"RESPONSE","content":"${SECRET}"}]}}}\n\n`;
+
+test('adapter: a follow-up\'s model comes from the reply\'s opening events, never its text', () => {
+  assert.equal(site.modelFromRequest(body({ model_type: null })), null);
+  assert.equal(site.modelFromResponse(OPEN + RESPONSE(false), {}), 'deepseek-default');
+  assert.equal(site.modelFromResponse(OPEN + RESPONSE(true), {}), 'deepseek-default-deepthink');
+  // Read as it arrives: nothing until the response object, then the name, once.
+  const state = {};
+  assert.equal(site.modelFromResponse(OPEN, state), null);
+  assert.equal(site.modelFromResponse(OPEN + RESPONSE(true), state), 'deepseek-default-deepthink');
+  assert.equal(site.modelFromResponse(OPEN + RESPONSE(true), state), null, 'done');
+  assert.equal(site.modelFromResponse('data: {"model_type":"' + SECRET.repeat(3) + '"}\n\n' + RESPONSE(false), {}), null);
+  assert.equal(site.modelFromResponse('data: {"p":"x","v":"y"}\n\n'.repeat(10) + OPEN + RESPONSE(false), {}), null, 'only the opening events');
+  assert.equal(site.modelFromResponse(undefined, {}), null);
+});
+
+test('a follow-up reply gets its model from the response while it streams', () => {
+  posts.length = 0;
+  const x = xhr('/api/v0/chat/completion', body({ model_type: null }));
+  x.responseText = OPEN;
+  x.fire('progress');
+  x.responseText = OPEN + RESPONSE(false);
+  x.fire('progress');
+  x.status = 200;
+  x.fire('loadend');
+  assert.deepEqual(posts.map((p) => p.type), ['start', 'firstByte', 'message', 'end']);
+  assert.equal(posts[2].sig.model, 'deepseek-default');
+  assert.ok(!JSON.stringify(posts).includes(SECRET));
+});
+
 test('stop_stream posts stop; other API calls are silent', () => {
   posts.length = 0;
   xhr('/api/v0/chat/create_pow_challenge', '{}');

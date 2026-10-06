@@ -8,6 +8,8 @@ let respond = null;
 
 globalThis.location = new URL('https://chatgpt.com/c/abc');
 globalThis.fetch = async (input, init) => respond(input, init);
+const pagehide = []; // the page's own listeners for pagehide, fired by the last test
+globalThis.addEventListener = (type, fn) => type === 'pagehide' && pagehide.push(fn);
 
 const sse = (chunks, gapMs = 5) => () => new Response(new ReadableStream({
   async start(c) {
@@ -233,4 +235,27 @@ test('the send request posts its two ids with the start signal, never the prompt
   const start = posts.find((p) => p.type === 'start');
   assert.deepEqual(start.sent, { conversationId: 'c-1', messageId: 'u-9' });
   assert.ok(!JSON.stringify(posts).includes(SECRET));
+});
+
+// Must stay last: once the page is going, it stays gone.
+// A reload aborts the reply's request as the page unloads (seen live on Perplexity and ChatGPT,
+// 2026-10-06). Ending the record there as an error left the reloaded page nothing to take over.
+test('a stream cut off by the page unloading posts no end: the next page takes the reply over', async () => {
+  posts.length = 0;
+  let cut;
+  respond = () => new Response(new ReadableStream({
+    start(c) {
+      c.enqueue(enc.encode(STREAM[1]));
+      cut = () => c.error(new DOMException('The user aborted a request.', 'AbortError'));
+    },
+  }), { headers: { 'content-type': 'text/event-stream' } });
+  const res = await fetch('/backend-api/f/conversation', { method: 'POST' });
+  const body = res.text().catch(() => {});
+  await new Promise((r) => setTimeout(r, 20));
+  for (const fn of pagehide) fn();
+  cut();
+  await body;
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(posts.some((p) => p.type === 'start'));
+  assert.equal(posts.filter((p) => p.type === 'end').length, 0);
 });
