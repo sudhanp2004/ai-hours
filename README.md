@@ -28,9 +28,9 @@ honest. Copilot, Grok and You.com have placeholder adapters but are **not** enab
 
 ## Install
 
-Coming soon to the Chrome Web Store. Until then, install it from this repository:
+**[Add AI Hours from the Chrome Web Store](https://chromewebstore.google.com/detail/ai-hours/hbomcdffiihfbfcenjcdjgpnnapiadcm)**: one click, and it updates itself.
 
-### From GitHub (Developer mode)
+### From GitHub (Developer mode, for development)
 
 1. Download this repository: **Code → Download ZIP**, then unzip it. Or clone it:
    `git clone https://github.com/sudhanp2004/ai-hours.git`
