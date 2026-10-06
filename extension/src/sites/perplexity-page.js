@@ -9,5 +9,8 @@
     // The label reads "Stop response (Esc)" and has no test id, so match its prefix.
     // English UI only: the label is localized.
     stopButton: 'button[aria-label^="Stop response"]',
+    // The button appears ~2.4 s after the reply request starts (measured 2026-10-06; it was
+    // ~1.3 s on 2026-10-03), past the default 2 s pairing window.
+    pairAfterMs: 6000,
   });
 })(globalThis);

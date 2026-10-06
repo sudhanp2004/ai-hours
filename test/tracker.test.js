@@ -288,3 +288,50 @@ test('a picked-up reply also claims a stop button that appears just after it', (
   tracker.tick(30000);
   assert.deepEqual([...new Set(writes.map((w) => w.id))], ['old']);
 });
+
+// Perplexity shows its stop button ~2.4 s after the reply request starts (measured live,
+// 2026-10-06), past the default 2 s window, so every reply was flagged dom-missing and the
+// popup warned that "a chat site may have changed". A site can widen the window.
+test('a site with a slow stop button pairs it within its own window', () => {
+  const writes = [];
+  const t = globalThis.__aiHours.createTracker({ site: 'perplexity', tabId: 7, pairAfterMs: 6000, newId: () => 'x', write: (r) => writes.push(structuredClone(r)) });
+  t.onSignal({ type: 'start', localId: 'a', t: 1000 });
+  t.domRaw(true, 3400); t.confirm(3750);
+  t.domRaw(false, 8000); t.confirm(8350);
+  t.onSignal({ type: 'end', localId: 'a', t: 8000, lastChunk: 8000, outcome: 'completed' });
+  assert.equal(writes.at(-1).source, 'fetch+dom');
+  assert.deepEqual(writes.at(-1).flags, []);
+});
+
+test('the default window stays 2 s: a button 2.4 s late is not paired', () => {
+  const { tracker, sig, latest } = setup();
+  sig('start', { localId: 'a', t: 1000 });
+  tracker.domRaw(true, 3400); tracker.confirm(3750);
+  sig('end', { localId: 'a', t: 8000, lastChunk: 8000, outcome: 'completed' });
+  assert.deepEqual(latest('a').flags, ['dom-missing']);
+});
+
+// Found live on Perplexity (store 1.0.1, 2026-10-06): a stop button outside the pairing window
+// was also turned into a DOM-only record, so the same reply was counted twice.
+test('a late stop button overlapping a measured reply joins it instead of becoming a second record', () => {
+  const { tracker, writes, sig, latest } = setup();
+  sig('start', { localId: 'a', t: 1000 });
+  tracker.domRaw(true, 3400); tracker.confirm(3750); // 2.4 s late: outside the default window
+  tracker.domRaw(false, 5400); tracker.confirm(5750);
+  sig('end', { localId: 'a', t: 5200, lastChunk: 5200, outcome: 'completed' });
+  tracker.tick(20000);
+  tracker.tick(40000);
+  assert.deepEqual([...new Set(writes.map((w) => w.id))], ['a'], 'no dom-only twin');
+  assert.equal(latest('a').end, 5200, 'the measured times stand');
+  assert.equal(latest('a').source, 'fetch+dom');
+});
+
+test('a stop button with no measured reply at that time is still its own DOM-only record', () => {
+  const { tracker, writes, sig } = setup();
+  sig('start', { localId: 'a', t: 1000 });
+  sig('end', { localId: 'a', t: 2000, lastChunk: 2000, outcome: 'completed' });
+  tracker.domRaw(true, 9000); tracker.confirm(9350);
+  tracker.domRaw(false, 12000); tracker.confirm(12350);
+  tracker.tick(25000);
+  assert.ok(writes.some((w) => w.source === 'dom-only' && w.start === 9000));
+});

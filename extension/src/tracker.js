@@ -22,7 +22,8 @@
     if (sig.reasoningEnd != null) s.reasoningEnd = sig.reasoningEnd;
   }
 
-  ns.createTracker = function createTracker({ site, tabId, tabKey = null, newId, write }) {
+  ns.createTracker = function createTracker({ site, tabId, tabKey = null, pairAfterMs, newId, write }) {
+    const pairs = (fetchStart, domStart) => ns.withinPairWindow(fetchStart, domStart, pairAfterMs);
     const open = new Map(); // localId -> record whose stream is still running
     const closed = new Map(); // localId -> {rec, at}; kept so a late stop-button change can update it
     let dom = []; // confirmed stop-button intervals {start, end, recId}
@@ -58,7 +59,7 @@
         sent: { conversationId: sent?.conversationId ?? null, messageId: sent?.messageId ?? null },
       });
       open.set(localId, r);
-      const d = dom.find((x) => !x.recId && ns.withinPairWindow(t, x.start));
+      const d = dom.find((x) => !x.recId && pairs(t, x.start));
       if (d) attach(r, d);
       write(r);
     }
@@ -121,7 +122,7 @@
       dom.push(d);
       // A fast failure (e.g. HTTP 429) can end before the debounce confirms the button, so look in closed too.
       const recs = [...open.values(), ...[...closed.values()].map((c) => c.rec)];
-      const r = recs.find((x) => !x.dom && ns.withinPairWindow(x.pairAt ?? x.start, t));
+      const r = recs.find((x) => !x.dom && pairs(x.pairAt ?? x.start, t));
       if (!r) return;
       attach(r, d);
       if (r.end !== null) reclassify(r);
@@ -146,6 +147,17 @@
       confirm(t);
       for (const d of dom) {
         if (d.recId || d.end === null || t - d.start < DOM_ONLY_AFTER_MS) continue;
+        // A button that showed while a measured reply was running is that reply's, however late
+        // it appeared: counting it again as its own record would count the same work twice
+        // (seen live on Perplexity, 2026-10-06).
+        const overlapping = [...open.values(), ...[...closed.values()].map((c) => c.rec)].find(
+          (r) => r.start <= d.end && (r.end ?? t) >= d.start,
+        );
+        if (overlapping) {
+          d.recId = overlapping.id;
+          if (!overlapping.dom) attach(overlapping, d), overlapping.end !== null && reclassify(overlapping);
+          continue;
+        }
         // The same shape as a fetch record, so the total adds them without special-casing.
         // Its sign of life is the moment the stop button went away.
         const r = blank({
@@ -171,7 +183,7 @@
       // record of the same work (seen live on Claude, 2026-10-06).
       r.dom = null;
       r.pairAt = t;
-      const d = dom.find((x) => !x.recId && (x.end === null || ns.withinPairWindow(t, x.start)));
+      const d = dom.find((x) => !x.recId && (x.end === null || pairs(t, x.start)));
       if (d) attach(r, d);
       open.set(localId, r);
       write(r);

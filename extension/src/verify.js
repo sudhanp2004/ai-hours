@@ -6,8 +6,9 @@
   const LARGE_GAP_MS = 10000;
 
   // The stop button appears ~50–70 ms after the send fetch (spike, 2026-09-30).
-  ns.withinPairWindow = (fetchStart, domStart) =>
-    domStart >= fetchStart - PAIR_BEFORE_MS && domStart <= fetchStart + PAIR_AFTER_MS;
+  // A site whose button comes later (Perplexity, ~2.4 s) passes its own afterMs.
+  ns.withinPairWindow = (fetchStart, domStart, afterMs = PAIR_AFTER_MS) =>
+    domStart >= fetchStart - PAIR_BEFORE_MS && domStart <= fetchStart + afterMs;
 
   ns.classify = function classify({ fetch, dom }) {
     if (!fetch) return { source: 'dom-only', confidence: 'low', flags: ['fetch-missing'] };

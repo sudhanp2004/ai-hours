@@ -92,6 +92,7 @@
       site: site.site,
       tabId,
       tabKey,
+      pairAfterMs: site.pairAfterMs,
       newId: () => crypto.randomUUID(),
       write(rec) {
         // Orphaned by an extension update: the re-injected copy takes over.

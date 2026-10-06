@@ -31,6 +31,7 @@ test('network and page halves merge into one config', () => {
   assert.equal(site.site, 'perplexity');
   assert.deepEqual(site.hosts, ['perplexity.ai']);
   assert.equal(site.stopButton, 'button[aria-label^="Stop response"]');
+  assert.equal(site.pairAfterMs, 6000, 'its stop button comes ~2.4 s after the request');
   assert.equal(site.verified, true);
   for (const k of ['parseEvent', 'parseConversation', 'sendIds']) assert.equal(typeof site[k], 'function', k);
 });
