@@ -24,7 +24,7 @@ const targets = (await send('Target.getTargets')).result.targetInfos;
 const sw = targets.find((x) => x.type === 'service_worker' && x.url.includes(extId));
 console.log('sw:', !!sw);
 const swS = (await send('Target.attachToTarget', { targetId: sw.targetId, flatten: true })).result.sessionId;
-const st = await send('Runtime.evaluate', { expression: 'chrome.storage.local.get(null).then(a => JSON.stringify(Object.entries(a).filter(([k]) => k.startsWith("rec:")).map(([, r]) => r).map(r => ({ site: r.site, start: r.start, end: r.end, outcome: r.outcome, flags: r.flags, model: r.server && r.server.model }))))', awaitPromise: true }, swS);
+const st = await send('Runtime.evaluate', { expression: 'chrome.storage.local.get(null).then(a => JSON.stringify(Object.entries(a).filter(([k]) => k.startsWith("rec:")).map(([, r]) => r).map(r => ({ site: r.site, start: r.start, end: r.end, outcome: r.outcome, flags: r.flags, model: r.server && r.server.model, tabId: r.tabId }))))', awaitPromise: true }, swS);
 console.log('records:', st.result?.result?.value ?? JSON.stringify(st.result));
 async function staleMark() {
   const d = (await send('DOM.getDocument', { depth: -1, pierce: true }, ps)).result.root;

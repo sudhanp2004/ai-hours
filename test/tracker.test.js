@@ -24,7 +24,7 @@ test('start writes an unknown record immediately', () => {
   const { writes, sig } = setup();
   sig('start', { localId: 'a', t: 1000, sent: { conversationId: 'c1', messageId: 'u1' } });
   assert.deepEqual(writes, [{
-    id: 'a', site: 'chatgpt', tabId: 7, start: 1000, firstByte: null, finished: null, end: null,
+    id: 'a', site: 'chatgpt', tabId: 7, tabKey: null, start: 1000, firstByte: null, finished: null, end: null,
     lastSeen: null, outcome: 'unknown', source: 'fetch-only', confidence: 'high', flags: [],
     dom: null, sent: { conversationId: 'c1', messageId: 'u1' }, recovered: null, server: {},
   }]);
@@ -164,7 +164,7 @@ test('stop button with no fetch → one dom-only record after 10 s', () => {
   // A DOM-only record has the same shape as every other record, so the total treats them
   // alike. Its sign of life is the moment the stop button went away.
   assert.deepEqual(writes, [{
-    id: 'dom-1', site: 'chatgpt', tabId: 7, start: 1000, firstByte: null, finished: null, end: 4000,
+    id: 'dom-1', site: 'chatgpt', tabId: 7, tabKey: null, start: 1000, firstByte: null, finished: null, end: 4000,
     lastSeen: 4000, outcome: 'unknown', source: 'dom-only', confidence: 'low', flags: ['fetch-missing'],
     dom: { start: 1000, end: 4000 }, sent: { conversationId: null, messageId: null }, recovered: null, server: {},
   }]);
@@ -257,4 +257,34 @@ test('an end more than 3 hours after the start is cut to 3 hours and flagged', (
   sig('end', { localId: 'a', t: 1000 + 5 * 3600e3, lastChunk: 1000 + 5 * 3600e3, outcome: 'completed' });
   assert.equal(latest('a').end, 1000 + 3 * 3600e3);
   assert.ok(latest('a').flags.includes('capped'));
+});
+
+// ---- a reply picked up after a refresh (spec §11 refresh): found live on Claude, 2026-10-06
+const orphan = (over) => ({
+  id: 'old', site: 'claude', tabId: 7, start: 1000, firstByte: 1500, finished: null, end: null, lastSeen: 4000,
+  outcome: 'pending', source: 'fetch-only', confidence: 'high', flags: [], dom: { start: 1050, end: null },
+  sent: { conversationId: null, messageId: null }, recovered: null, server: {}, ...over,
+});
+
+test('a picked-up reply claims the stop button already showing on the new page: no second record', () => {
+  const { tracker, writes, latest, sig, show, hide } = setup();
+  show(9000); // the reloaded page renders the running reply's stop button first
+  sig('resume', {}); // (content.js handles resume; the tracker sees adopt)
+  tracker.adopt('L2', orphan(), 9400);
+  hide(15000);
+  sig('end', { localId: 'L2', t: 15000, lastChunk: 15000, outcome: 'completed' });
+  tracker.tick(30000);
+  assert.deepEqual([...new Set(writes.map((w) => w.id))], ['old'], 'no dom-only record');
+  assert.equal(latest('old').end, 15000);
+  assert.equal(latest('old').source, 'fetch+dom');
+});
+
+test('a picked-up reply also claims a stop button that appears just after it', () => {
+  const { tracker, writes, sig, show, hide } = setup();
+  tracker.adopt('L2', orphan(), 9000);
+  show(9800);
+  hide(14000);
+  sig('end', { localId: 'L2', t: 14000, lastChunk: 14000, outcome: 'completed' });
+  tracker.tick(30000);
+  assert.deepEqual([...new Set(writes.map((w) => w.id))], ['old']);
 });

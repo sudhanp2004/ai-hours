@@ -22,7 +22,7 @@
     if (sig.reasoningEnd != null) s.reasoningEnd = sig.reasoningEnd;
   }
 
-  ns.createTracker = function createTracker({ site, tabId, newId, write }) {
+  ns.createTracker = function createTracker({ site, tabId, tabKey = null, newId, write }) {
     const open = new Map(); // localId -> record whose stream is still running
     const closed = new Map(); // localId -> {rec, at}; kept so a late stop-button change can update it
     let dom = []; // confirmed stop-button intervals {start, end, recId}
@@ -45,7 +45,7 @@
 
     function blank(over) {
       return {
-        site, tabId, firstByte: null, finished: null, end: null, lastSeen: null, outcome: 'unknown',
+        site, tabId, tabKey, firstByte: null, finished: null, end: null, lastSeen: null, outcome: 'unknown',
         source: 'fetch-only', confidence: 'high', flags: [], dom: null,
         sent: { conversationId: null, messageId: null }, recovered: null, server: {}, ...over,
       };
@@ -121,7 +121,7 @@
       dom.push(d);
       // A fast failure (e.g. HTTP 429) can end before the debounce confirms the button, so look in closed too.
       const recs = [...open.values(), ...[...closed.values()].map((c) => c.rec)];
-      const r = recs.find((x) => !x.dom && ns.withinPairWindow(x.start, t));
+      const r = recs.find((x) => !x.dom && ns.withinPairWindow(x.pairAt ?? x.start, t));
       if (!r) return;
       attach(r, d);
       if (r.end !== null) reclassify(r);
@@ -165,6 +165,14 @@
       const r = { ...structuredClone(rec), outcome: 'unknown', lastSeen: t };
       delete r.closedAt;
       if (!r.flags.includes('resumed')) r.flags = [...r.flags, 'resumed'];
+      // The old page's stop-button interval died with it. On this page the running reply's
+      // button is paired from the moment of adoption, not from the reply's original start, and
+      // one already showing is this reply's: otherwise it would become a second, DOM-only
+      // record of the same work (seen live on Claude, 2026-10-06).
+      r.dom = null;
+      r.pairAt = t;
+      const d = dom.find((x) => !x.recId && (x.end === null || ns.withinPairWindow(t, x.start)));
+      if (d) attach(r, d);
       open.set(localId, r);
       write(r);
     }

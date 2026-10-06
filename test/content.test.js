@@ -50,8 +50,9 @@ function fakeDocument(selector) {
 // The adapter is normally loaded from sites/, which is where the manifest points. A test can
 // name different files to simulate a page whose adapter is for another site (see the hosts
 // guard below), so the load list is a parameter rather than a constant.
-function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname, readyState, synced = {} } = {}) {
+function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname, readyState, synced = {}, session = {}, tabIdAfter = 0 } = {}) {
   const store = { ...stored };
+  let asks = 0;
   const sent = [];
   const listeners = { message: null, storage: null };
   const ctx = {
@@ -67,6 +68,8 @@ function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname, readyState
     },
     structuredClone,
     CustomEvent,
+    // The tab's sessionStorage, which survives a reload in the same tab.
+    sessionStorage: { getItem: (k) => session[k] ?? null, setItem: (k, v) => (session[k] = String(v)) },
     Date: { now: () => T0 },
   };
   ctx.removeEventListener = () => {};
@@ -76,7 +79,8 @@ function setup({ stored = {}, tabId = 7, siteFiles = FILES, hostname, readyState
   // different domain to check the hosts guard.
   ctx.location = { href: 'https://chatgpt.com/c/abc', origin: 'https://chatgpt.com', hostname: hostname ?? 'chatgpt.com' };
   ctx.chrome = {
-    runtime: { id: 'ext', lastError: null, sendMessage: (m, cb) => cb(tabId === null ? undefined : { tabId }) },
+    // tabIdAfter: how many asks fail first (the worker didn't answer), as seen live 2026-10-06.
+    runtime: { id: 'ext', lastError: null, sendMessage: (m, cb) => { asks++; cb(tabId === null || asks <= tabIdAfter ? undefined : { tabId }); } },
     storage: {
       local: {
         get: async (k) => (k === null ? { ...store } : Object.fromEntries([].concat(k).filter((x) => x in store).map((x) => [x, store[x]]))),
@@ -409,4 +413,39 @@ test('without a device id yet, no synced summary counts: it could be this instal
   await settle();
   await settle();
   assert.equal(doc.pill['.time'].textContent, '0s');
+});
+
+// ---- tab identity without the worker (found live, 2026-10-06): the worker sometimes never
+// answered "which tab am I?", so a refreshed page could not find its own unfinished reply.
+test('the tab id is asked again when the worker does not answer at first', async () => {
+  const { context, store, send } = setup({ tabIdAfter: 2, stored: {} });
+  for (let i = 0; i < 12; i++) await settle();
+  await new Promise((r) => setTimeout(r, 1500));
+  send(context, { type: 'start', localId: 'a', t: T0 - 1000 });
+  await settle();
+  assert.equal(store['rec:a'].tabId, 7);
+});
+
+test('without any tab id, a refreshed page still finds its own unfinished reply by the tab\u2019s session key', async () => {
+  const session = { 'aiHours.tabKey': 'k-1' };
+  const stored = { 'rec:old': rec({ id: 'old', tabId: null, tabKey: 'k-1', start: T0 - 20000, lastSeen: T0 - 1000 }) };
+  const { context, store, send } = setup({ stored, tabId: null, session });
+  for (let i = 0; i < 12; i++) await settle();
+  await new Promise((r) => setTimeout(r, 4500)); // the retries give up
+  assert.equal(store['rec:old'].outcome, 'pending', 'closed as this tab\u2019s leftover');
+  send(context, { type: 'resume', localId: 'L2', t: T0 - 500 });
+  await settle();
+  assert.ok(store['rec:old'].flags.includes('resumed'), 'and picked up');
+});
+
+test('a new record carries the tab\u2019s session key; another tab\u2019s key is never matched', async () => {
+  const session = {};
+  const stored = { 'rec:other': rec({ id: 'other', tabId: null, tabKey: 'someone-else', start: T0 - 20000, lastSeen: T0 - 1000 }) };
+  const { context, store, send } = setup({ stored, session });
+  await settle();
+  send(context, { type: 'start', localId: 'n', t: T0 - 100 });
+  await settle();
+  assert.match(store['rec:n'].tabKey, /./);
+  assert.equal(store['rec:n'].tabKey, session['aiHours.tabKey']);
+  assert.equal(store['rec:other'].outcome, 'unknown');
 });

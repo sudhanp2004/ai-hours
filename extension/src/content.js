@@ -22,18 +22,44 @@
   let tracker = null;
 
   // The worker replies with sender.tab.id, so it has to be asked once per page.
-  function askTabId() {
+  function askTabIdOnce() {
     return new Promise((resolve) => {
       try {
         chrome.runtime.sendMessage({ __aih: 1, type: 'tabId' }, (r) => {
-          if (chrome.runtime.lastError || !r?.tabId) resolve(null);
-          else resolve(r.tabId);
+          const err = chrome.runtime.lastError?.message;
+          if (err || !r?.tabId) resolve({ id: null, err: err ?? 'no tab id in the answer' });
+          else resolve({ id: r.tabId });
         });
-      } catch {
-        resolve(null);
+      } catch (e) {
+        resolve({ id: null, err: String(e?.message ?? e) });
       }
     });
   }
+
+  // Seen live (2026-10-06): the worker sometimes didn't answer the first ask, leaving a page
+  // without its tab id. Ask again a few times before going on without one.
+  async function askTabId() {
+    let last;
+    for (const wait of [0, 300, 1000, 3000]) {
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      last = await askTabIdOnce();
+      if (last.id !== null) return last.id;
+    }
+    console.warn('AI Hours: no tab id from the service worker;', last.err);
+    return null;
+  }
+
+  // A per-tab identity that needs no messaging: sessionStorage belongs to one tab and survives
+  // a reload in it. It is how a refreshed page recognises the reply its previous page left
+  // unfinished, even when the tab id never arrived.
+  let tabKey = null;
+  try {
+    tabKey = sessionStorage.getItem('aiHours.tabKey');
+    if (!tabKey) sessionStorage.setItem('aiHours.tabKey', (tabKey = crypto.randomUUID()));
+  } catch {
+    tabKey = null; // storage blocked: the tab id alone, as before
+  }
+  const mine = (r) => (tabId !== null && r.tabId === tabId) || (tabKey !== null && r.tabKey === tabKey);
 
   // Ids of the records the previous page left unfinished, newest first once sorted. One of
   // them may still be running on the server, and this page can take it over (onResume).
@@ -46,9 +72,9 @@
   // `before` is the snapshot taken before this page's tracker existed, so a record this
   // page creates can never be mistaken for a leftover.
   async function closeOrphans(before) {
-    if (tabId === null) return;
+    if (tabId === null && tabKey === null) return;
     const orphans = before.filter(
-      (r) => r.tabId === tabId && r.end == null && !r.recovered && r.outcome !== 'pending',
+      (r) => mine(r) && r.end == null && !r.recovered && r.outcome !== 'pending',
     );
     if (!orphans.length) return;
     resumable = orphans.map((r) => r.id);
@@ -65,6 +91,7 @@
     const t = ns.createTracker({
       site: site.site,
       tabId,
+      tabKey,
       newId: () => crypto.randomUUID(),
       write(rec) {
         // Orphaned by an extension update: the re-injected copy takes over.
